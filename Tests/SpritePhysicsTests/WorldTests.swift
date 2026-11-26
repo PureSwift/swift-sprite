@@ -32,8 +32,9 @@ func run(_ world: PhysicsWorld, seconds: Double) {
         world.add(body)
         run(world, seconds: 1)
         #expect(approx(body.velocity.y, -980, tolerance: 0.1))
-        // Σ v_i dt = g dt² n(n+1)/2
-        #expect(approx(body.position.y, -980 / 3600 * 1830, tolerance: 0.1))
+        // Box2D integrates 4 substeps per step: Σ v_k h = g h² N(N+1)/2 with N = 240 substeps.
+        let h: Float = 1.0 / 240.0
+        #expect(approx(body.position.y, -980 * h * h * 240 * 241 / 2, tolerance: 0.1))
     }
 
     @Test func fixedTimestepAccumulates() {
@@ -56,7 +57,7 @@ func run(_ world: PhysicsWorld, seconds: Double) {
         box.position = [0, 30]
         world.add(box)
         run(world, seconds: 3)
-        #expect(abs(box.position.y - 10) < world.linearSlop + 0.5)
+        #expect(abs(box.position.y - 10) < 1)
         #expect(length(box.velocity) < 1)
         #expect(abs(box.rotation) < 0.01)
     }
@@ -135,7 +136,8 @@ func run(_ world: PhysicsWorld, seconds: Double) {
     }
 
     @Test func collisionMasksFilterResponse() {
-        let (world, ground) = makeWorld()
+        let (world, _) = makeWorld()
+        // An empty collision mask makes a sensor that passes through everything.
         let ghost = PhysicsBody(circleOfRadius: 5)
         ghost.position = [0, 20]
         ghost.collisionBitMask = .none
@@ -143,29 +145,28 @@ func run(_ world: PhysicsWorld, seconds: Double) {
         let solid = PhysicsBody(circleOfRadius: 5)
         solid.position = [50, 20]
         world.add(solid)
-        run(world, seconds: 1)
-        #expect(ghost.position.y < -100)
-        #expect(solid.position.y > 0)
 
-        // Asymmetric: the static ground is never pushed, and a heavy body ignoring a light one is not either.
+        // Collisions are mutual: a body excluding the other's category passes through it.
         let player = PhysicsCategory(bit: 1)
         let debris = PhysicsCategory(bit: 2)
         let heavy = PhysicsBody(rectangleOf: [20, 20])
         heavy.categoryBitMask = player
         heavy.collisionBitMask = .all.subtracting(debris)
         heavy.position = [200, 10]
-        heavy.affectedByGravity = false
         let light = PhysicsBody(rectangleOf: [10, 10])
         light.categoryBitMask = debris
-        light.position = [180, 10]
+        light.position = [170, 5]
         light.velocity = [100, 0]
-        light.affectedByGravity = false
+        light.linearDamping = 0
+        light.friction = 0
         world.add(heavy)
         world.add(light)
-        _ = ground
-        run(world, seconds: 0.5)
-        #expect(approx(heavy.velocity.x, 0, tolerance: 0.01))
-        #expect(light.velocity.x < 50)
+
+        run(world, seconds: 1)
+        #expect(ghost.position.y < -100)
+        #expect(solid.position.y > 0)
+        #expect(light.position.x > 230)
+        #expect(abs(heavy.position.x - 200) < 0.1)
     }
 
     @Test func contactEventsRespectTestMask() {
@@ -200,20 +201,23 @@ func run(_ world: PhysicsWorld, seconds: Double) {
     @Test func sensorsReportWithoutColliding() {
         let world = PhysicsWorld()
         world.gravity = .zero
+        let trigger = PhysicsCategory(bit: 3)
         let sensor = PhysicsBody(rectangleOf: [50, 50])
         sensor.isDynamic = false
         sensor.collisionBitMask = .none
-        sensor.categoryBitMask = PhysicsCategory(bit: 3)
+        sensor.categoryBitMask = trigger
         let ball = PhysicsBody(circleOfRadius: 5)
         ball.position = [-100, 0]
         ball.velocity = [200, 0]
         ball.linearDamping = 0
-        ball.collisionBitMask = .all.subtracting(PhysicsCategory(bit: 3))
-        ball.contactTestBitMask = PhysicsCategory(bit: 3)
+        ball.contactTestBitMask = trigger
         world.add(sensor)
         world.add(ball)
         var entered = false, exited = false
-        world.onContactBegin = { _ in entered = true }
+        world.onContactBegin = { contact in
+            entered = true
+            #expect(contact.involves(sensor) && contact.involves(ball))
+        }
         world.onContactEnd = { _ in exited = true }
         run(world, seconds: 1.5)
         #expect(entered && exited)
