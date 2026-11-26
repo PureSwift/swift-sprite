@@ -2,25 +2,29 @@
 //  SpringJoint.swift
 //  SpritePhysics
 //
-//  Adapted from Box2D v3's distance joint spring (MIT License, Copyright 2023 Erin Catto).
-//
 
+import CBox2D
 import SpriteCore
 
-/// Damped spring between two anchors, solved implicitly for stability.
+/// Damped spring between two anchors (Box2D distance joint with a spring).
 public final class SpringJoint: PhysicsJoint {
 
     /// Oscillation frequency in hertz.
-    public var frequency: Float
+    public var frequency: Float {
+        didSet { jointID.map { b2DistanceJoint_SetSpringHertz($0, frequency) } }
+    }
 
     /// Damping ratio; `0` oscillates freely, `1` is critically damped.
-    public var damping: Float
+    public var damping: Float {
+        didSet { jointID.map { b2DistanceJoint_SetSpringDampingRatio($0, damping) } }
+    }
 
-    public var restLength: Float
+    public var restLength: Float {
+        didSet { jointID.map { b2DistanceJoint_SetRestLength($0, restLength) } }
+    }
 
     private let localAnchorA: Vector2
     private let localAnchorB: Vector2
-    private var impulse: Float = 0
 
     /// - Parameters:
     ///   - anchorA: Attachment point on body A in world coordinates.
@@ -33,41 +37,25 @@ public final class SpringJoint: PhysicsJoint {
         anchorB: Vector2,
         frequency: Float = 2,
         damping: Float = 0.3,
-        restLength: Float? = nil
+        restLength: Float? = nil,
+        collideConnected: Bool = false
     ) {
         self.frequency = frequency
         self.damping = damping
         self.restLength = restLength ?? length(anchorB - anchorA)
-        localAnchorA = PhysicsJoint.localAnchor(anchorA, on: bodyA)
-        localAnchorB = PhysicsJoint.localAnchor(anchorB, on: bodyB)
-        super.init(bodyA: bodyA, bodyB: bodyB)
+        localAnchorA = PhysicsJoint.localPoint(anchorA, on: bodyA)
+        localAnchorB = PhysicsJoint.localPoint(anchorB, on: bodyB)
+        super.init(bodyA: bodyA, bodyB: bodyB, collideConnected: collideConnected)
     }
 
-    private func geometry() -> (rA: Vector2, rB: Vector2, axis: Vector2, length: Float) {
-        let rA = Rotation(bodyA.rotation).apply(localAnchorA)
-        let rB = Rotation(bodyB.rotation).apply(localAnchorB)
-        let d = (bodyB.worldCenter + rB) - (bodyA.worldCenter + rA)
-        let currentLength = length(d)
-        return (rA, rB, currentLength > .ulpOfOne ? d / currentLength : Vector2(1, 0), currentLength)
-    }
-
-    override func warmStart() {
-        let (rA, rB, axis, _) = geometry()
-        apply(impulse * axis, rA: rA, rB: rB)
-    }
-
-    /// Spring forces are physical, so they apply in both the biased and relax passes.
-    override func solve(context: SolverContext, useBias: Bool) {
-        let (rA, rB, axis, currentLength) = geometry()
-        let crA = cross(rA, axis), crB = cross(rB, axis)
-        let k = bodyA.invMass + bodyB.invMass + bodyA.invInertia * crA * crA + bodyB.invInertia * crB * crB
-        let axialMass: Float = k > 0 ? 1 / k : 0
-        let spring = Softness(hertz: frequency, dampingRatio: damping, h: context.h)
-        let bias = spring.biasRate * (currentLength - restLength)
-        let cdot = dot(relativeVelocity(rA: rA, rB: rB), axis)
-        let delta = -spring.massScale * axialMass * (cdot + bias) - spring.impulseScale * impulse
-        impulse += delta
-        apply(delta * axis, rA: rA, rB: rB)
-        reactionImpulse = impulse * axis
+    override func makeJoint(in world: b2WorldId) -> b2JointId {
+        var definition = b2DefaultDistanceJointDef()
+        configure(&definition.base, localAnchorA: localAnchorA, localAnchorB: localAnchorB)
+        definition.length = restLength
+        definition.enableSpring = true
+        definition.hertz = frequency
+        definition.dampingRatio = damping
+        definition.enableLimit = false
+        return b2CreateDistanceJoint(world, &definition)
     }
 }
