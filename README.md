@@ -9,9 +9,9 @@ Pure-Swift, prefix-free 2D rendering for Linux, macOS, and iOS. See [ARCHITECTUR
 | Module | Description |
 | --- | --- |
 | `SpriteCore` | 2D math (`Matrix3x3`, `Transform2D`, `Rect`, `Color`), `Texture`, `TextureAtlas`, `SpriteBatcher`, and the `SpriteRenderBackend` protocol. No platform dependencies. |
-| `SpriteGraph` | Scene tree: `Scene` (scale modes, `Duration`-driven update loop, `physicsWorld`), `Node` (`@Node2DBuilder`, `physicsBody`), `Sprite` (9-patch `centerRect`), `Label` (bitmap / SDF `BitmapFont`), `Camera`, `ParticleEmitter` (structure-of-arrays simulation, keyframe sequences), and composable value-type `Action`s. |
+| `SpriteGraph` | Scene tree: `Scene` (scale modes, `Duration`-driven update loop, `physicsWorld`), `Node` (`@Node2DBuilder`, `physicsBody`), `Sprite` (9-patch `centerRect`), `Label` (bitmap / SDF `BitmapFont`), `Camera`, `ParticleEmitter` (structure-of-arrays simulation, keyframe sequences), `TileMap` / `TileSet` (editable grids with cached quad chunks), and composable value-type `Action`s. |
 | `SpritePhysics` | Swift API over [Box2D](https://box2d.org) v3: `PhysicsWorld`, `PhysicsBody`, `PhysicsShape`, `PhysicsCategory` masks, contact/sensor notifications, ray casts, and pin / fixed / distance / spring joints. |
-| `SpriteFormats` | PNG decoding via [swift-png](https://github.com/PureSwift/swift-png), SpriteKit `.atlas` / `.atlasc`, libGDX / Spine `.atlas`, and Aseprite JSON sprite sheets with tag animations and 9-patch slices. |
+| `SpriteFormats` | PNG decoding via [swift-png](https://github.com/PureSwift/swift-png), SpriteKit `.atlas` / `.atlasc`, libGDX / Spine `.atlas`, Aseprite JSON sprite sheets with tag animations and 9-patch slices, and finite orthogonal Tiled `.tmx` / `.tsx` maps. |
 | `SpriteSDL` | SDL3 window, input events, and `SDLRenderBackend` batch renderer. |
 | `sprite-viewer` | SDL3 demo and inspector for scenes and the batch renderer. |
 
@@ -88,6 +88,40 @@ let hero = Sprite(texture: atlases[texture: "hero"]!)
 let (sheet, decoded) = try await AsepriteSheet.decode(at: url.appending(path: "hero.json"))
 let atlas = try decoded.makeTextureAtlases(backend: backend)[0]
 hero.run(.repeatForever(sheet.animation(tag: "walk", atlas: atlas)!))
+```
+
+### Tile maps
+
+```swift
+import SpriteFormats
+
+let map = try await TiledMap.decode(at: mapURL)
+let root = try map.makeNode(backend: backend)
+scene.addChild(root)
+
+// TileMap coordinates are Y-up, with row zero at the bottom.
+if let ground = root.children.first as? TileMap {
+    ground[0, 0] = nil
+    let center = ground.centerOfTile(column: 1, row: 1)
+}
+```
+
+The initial Tiled loader supports finite orthogonal maps with right-down render order,
+uncompressed CSV layers, inline or external TSX tilesets, PNG sheets, margin/spacing,
+all eight flip combinations, and layer names, visibility, opacity, and pixel offsets.
+Tileset tile dimensions must match the map grid. Infinite maps, other orientations,
+compressed/base64 data, groups, object/image layers, per-tile metadata/animation,
+tile offsets, transparency keys, and layer tint/parallax are not supported and produce errors.
+Editor metadata and custom properties are ignored.
+
+Each map caches local quads in 16×16 chunks; editing a cell invalidates its chunk.
+The existing batcher still constructs frame vertices each frame; viewport culling and
+persistent GPU chunk buffers are future work. Textures remain owned by the backend.
+
+Preview the included fixture from the repository root:
+
+```sh
+swift run sprite-viewer --tmx Tests/SpriteFormatsTests/Fixtures/Tiled/sample.tmx
 ```
 
 ### Batch renderer
