@@ -3,6 +3,11 @@
 //  SpritePhysicsTests
 //
 
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 import Testing
 import SpriteCore
 @testable import SpritePhysics
@@ -61,62 +66,56 @@ func approx(_ a: Vector2, _ b: Vector2, tolerance: Float = 1e-3) -> Bool {
         let edge = PhysicsBody(shape: .edge(from: [0, 0], to: [10, 0]))
         #expect(edge.area == 0 && !edge.isDynamic)
         let loop = PhysicsBody(edgeLoopFrom: Rect(x: 0, y: 0, width: 10, height: 10))
-        #expect(loop.parts.count == 4)
-        #expect(PhysicsShape.edgeChain([[0, 0], [1, 0], [2, 0]]).parts.count == 2)
+        #expect(loop.primitives.count == 4)
+        #expect(PhysicsShape.edgeChain([[0, 0], [1, 0], [2, 0]]).primitives.count == 2)
     }
 
     @Test func convexHullIsCounterClockwise() {
         let hull = convexHull([[1, 1], [0, 0], [0, 1], [1, 0], [0.5, 0.5], [0.5, 0]])
         #expect(hull == [[0, 0], [1, 0], [1, 1], [0, 1]])
-        // Clockwise polygons are normalized.
-        let part = ConvexPart.polygon([[0, 0], [0, 1], [1, 1], [1, 0]])
-        guard case let .polygon(vertices, normals) = part else {
-            Issue.record("Expected polygon")
-            return
-        }
-        #expect(vertices.first == [0, 0] && vertices[1] == [1, 0])
-        #expect(normals[0] == [0, -1])
     }
 
-    @Test func containsPoint() {
+    @Test func largePolygonsAreSplit() {
+        // A 16-gon exceeds Box2D's 8-vertex limit and is fanned into several polygons.
+        let points = (0 ..< 16).map { i -> Vector2 in
+            let angle = Float(i) / 16 * 2 * .pi
+            return Vector2(cosf(angle), sinf(angle)) * 100
+        }
+        let shape = PhysicsShape.polygon(points)
+        #expect(shape.primitives.count > 1)
+        let expectedArea = 0.5 * 16 * 10_000 * sinf(2 * .pi / 16)
+        #expect(approx(PhysicsBody(shape: shape).area, expectedArea, tolerance: 1))
+    }
+
+    @Test func containsPointAndBounds() throws {
         let body = PhysicsBody(rectangleOf: [10, 10])
         body.position = [100, 0]
         body.rotation = .pi / 4
         #expect(body.contains([100, 0]))
         #expect(body.contains([100, 6.5]))
         #expect(!body.contains([105, 5]))
-        let bounds = try! #require(body.bounds)
-        #expect(approx(bounds.width, 10 * 2.0.squareRoot().asFloat, tolerance: 0.01))
+        let bounds = try #require(body.bounds)
+        #expect(approx(bounds.width, 10 * Float(2).squareRoot(), tolerance: 0.01))
+
+        let circle = PhysicsBody(circleOfRadius: 5, center: [10, 0])
+        circle.rotation = .pi / 2
+        let circleBounds = try #require(circle.bounds)
+        #expect(approx(circleBounds.center, [0, 10]))
+        #expect(approx(circleBounds.size, [10, 10]))
     }
 
-    @Test func circleCircleManifold() throws {
-        let manifold = try #require(collideCircles([0, 0], 1, [1.5, 0], 1, margin: 0))
-        #expect(manifold.normal == [1, 0])
-        #expect(approx(manifold.points[0].separation, -0.5))
-        #expect(approx(manifold.points[0].position, [0.75, 0]))
-        #expect(collideCircles([0, 0], 1, [3, 0], 1, margin: 0.5) == nil)
+    @Test func propertiesSurviveAttachAndDetach() {
+        let world = PhysicsWorld()
+        let body = PhysicsBody(circleOfRadius: 1)
+        body.position = [5, 6]
+        body.velocity = [1, 2]
+        world.add(body)
+        #expect(body.position == [5, 6])
+        #expect(approx(body.velocity, [1, 2]))
+        body.position = [7, 8]
+        world.remove(body)
+        #expect(body.world == nil)
+        #expect(body.position == [7, 8])
+        #expect(approx(body.velocity, [1, 2]))
     }
-
-    @Test func boxBoxManifoldHasTwoPoints() throws {
-        let a = ConvexPart.polygon([[-1, -1], [1, -1], [1, 1], [-1, 1]])!
-        let b = ConvexPart.polygon([[-1, 0.9], [1, 0.9], [1, 2.9], [-1, 2.9]])!
-        let manifold = try #require(collide(a, b, margin: 0))
-        #expect(approx(manifold.normal, [0, 1]))
-        #expect(manifold.points.count == 2)
-        #expect(manifold.points.allSatisfy { approx($0.separation, -0.1) })
-    }
-
-    @Test func circleAgainstPolygonCorner() throws {
-        let box = ConvexPart.polygon([[-1, -1], [1, -1], [1, 1], [-1, 1]])!
-        let circle = ConvexPart.circle(center: [1.5, 1.5], radius: 1)
-        let manifold = try #require(collide(box, circle, margin: 0))
-        #expect(approx(manifold.normal, normalize([1, 1])))
-        // Reversed order flips the normal.
-        let reversed = try #require(collide(circle, box, margin: 0))
-        #expect(approx(reversed.normal, -normalize([1, 1])))
-    }
-}
-
-private extension Double {
-    var asFloat: Float { Float(self) }
 }
