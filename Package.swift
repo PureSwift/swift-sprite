@@ -95,7 +95,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "sprite-viewer",
-            dependencies: ["SpriteCore", "SpriteGraph", "SpritePhysics", "SpriteSDL"],
+            dependencies: ["SpriteCore", "SpriteGraph", "SpritePhysics", "SpriteSDL", "SpriteFormats"],
             path: "Tools/sprite-viewer",
             swiftSettings: swiftSettings
         ),
