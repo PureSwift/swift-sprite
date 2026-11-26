@@ -10,8 +10,8 @@ let swiftSettings: [SwiftSetting] = [
 let package = Package(
     name: "swift-sprite",
     platforms: [
-        .macOS(.v14),
-        .iOS(.v17),
+        .macOS(.v15),
+        .iOS(.v18),
     ],
     products: [
         .library(
@@ -38,6 +38,10 @@ let package = Package(
             name: "sprite-viewer",
             targets: ["sprite-viewer"]
         ),
+    ],
+    dependencies: [
+        // Until a release tags the Swift `PNG` API; 0.1.1 predates it.
+        .package(url: "https://github.com/PureSwift/swift-png.git", branch: "master"),
     ],
     targets: [
         // Pure Swift: 2D math, textures, atlases, quad batching and render backend protocol.
@@ -68,7 +72,11 @@ let package = Package(
         // Asset codecs: DEFLATE, PNG, texture atlases and sprite sheets.
         .target(
             name: "SpriteFormats",
-            dependencies: ["SpriteCore", "SpriteGraph"],
+            dependencies: [
+                "SpriteCore",
+                "SpriteGraph",
+                .product(name: "PNG", package: "swift-png"),
+            ],
             swiftSettings: swiftSettings
         ),
         // System module map for the SDL3 C library.
