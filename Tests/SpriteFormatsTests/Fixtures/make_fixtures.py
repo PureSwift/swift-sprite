@@ -1,4 +1,4 @@
-import zlib, struct, random, gzip, sys, os
+import zlib, struct, sys, os
 out = sys.argv[1]
 def chunk(t,d): return struct.pack('>I',len(d))+t+d+struct.pack('>I',zlib.crc32(t+d)&0xffffffff)
 
@@ -42,10 +42,11 @@ def encode(name, w, h, depth, ct, sample_fn, plte=None, trns=None, interlace=Fal
     data=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',w,h,depth,ct,0,0,1 if interlace else 0))
     if plte: data+=chunk(b'PLTE',bytes(sum(plte,[])))
     if trns is not None: data+=chunk(b'tRNS',bytes(trns))
-    # split IDAT across chunks to test concatenation
+    # split IDAT across two chunks to test concatenation
     comp=zlib.compress(raw,9)
     half=len(comp)//2
-    data+=chunk(b'IDAT',comp[:half])+chunk(b'tEXt',b'Comment\x00test')+chunk(b'IDAT',comp[half:])+chunk(b'IEND',b'')
+    # IDAT chunks must be consecutive; the ancillary chunk goes before them.
+    data+=chunk(b'tEXt',b'Comment\x00test')+chunk(b'IDAT',comp[:half])+chunk(b'IDAT',comp[half:])+chunk(b'IEND',b'')
     open(os.path.join(out,'PNG',name+'.png'),'wb').write(data)
 
 def expect(name,w,h,fn):
@@ -57,7 +58,9 @@ encode('rgba8',W,H,8,6,rgba); expect('rgba8',W,H,rgba)
 encode('rgba8-interlaced',W,H,8,6,rgba,interlace=True); expect('rgba8-interlaced',W,H,rgba)
 rgb16=lambda x,y:[x*3000,y*4000,(x+y)*1000]
 encode('rgb16-trns',W,H,16,2,rgb16,trns=list(struct.pack('>HHH',3000,4000,2000)))
-expect('rgb16-trns',W,H,lambda x,y:[(x*3000)>>8,(y*4000)>>8,((x+y)*1000)>>8, 0 if (x,y)==(1,1) else 255])
+# 16-bit samples are reduced with libpng's rounding (png_set_scale_16).
+scale16=lambda v:(v*255+32895)>>16
+expect('rgb16-trns',W,H,lambda x,y:[scale16(x*3000),scale16(y*4000),scale16((x+y)*1000), 0 if (x,y)==(1,1) else 255])
 g1=lambda x,y:[(x+y)%2]
 encode('gray1',W,H,1,0,g1); expect('gray1',W,H,lambda x,y:[255*((x+y)%2)]*3+[255])
 g4=lambda x,y:[(x*y)%16]
@@ -67,16 +70,3 @@ p2=lambda x,y:[(x+2*y)%4]
 encode('palette2-trns',W,H,2,3,p2,plte=pal,trns=[255,128]); expect('palette2-trns',W,H,lambda x,y: pal[(x+2*y)%4]+[[255,128,255,255][(x+2*y)%4]])
 ga=lambda x,y:[(x*13)&255,(y*19)&255]
 encode('graya8-interlaced',W,H,8,4,ga,interlace=True); expect('graya8-interlaced',W,H,lambda x,y:[(x*13)&255]*3+[(y*19)&255])
-
-# Deflate fixtures
-random.seed(7)
-text=(b'The quick brown fox jumps over the lazy dog. '*40)
-skew=bytes(min(255,int(random.expovariate(0.08))) for _ in range(20000))
-payload=text+skew
-open(os.path.join(out,'Deflate','payload.bin'),'wb').write(payload)
-open(os.path.join(out,'Deflate','stored.zlib'),'wb').write(zlib.compress(payload,0))
-open(os.path.join(out,'Deflate','fast.zlib'),'wb').write(zlib.compress(payload,1))
-open(os.path.join(out,'Deflate','best.zlib'),'wb').write(zlib.compress(payload,9))
-co=zlib.compressobj(9,zlib.DEFLATED,-15); open(os.path.join(out,'Deflate','raw.deflate'),'wb').write(co.compress(payload)+co.flush())
-co=zlib.compressobj(6,zlib.DEFLATED,-15,9,zlib.Z_FIXED); open(os.path.join(out,'Deflate','fixed.deflate'),'wb').write(co.compress(payload)+co.flush())
-f=open(os.path.join(out,'Deflate','payload.gz'),'wb'); g=gzip.GzipFile(filename='payload.bin',mode='wb',fileobj=f,mtime=0); g.write(payload); g.close(); f.close()
