@@ -11,13 +11,14 @@ Pure-Swift, prefix-free 2D rendering for Linux, macOS, and iOS. See [ARCHITECTUR
 | `SpriteCore` | 2D math (`Matrix3x3`, `Transform2D`, `Rect`, `Color`), `Texture`, `TextureAtlas`, `SpriteBatcher`, and the `SpriteRenderBackend` protocol. No platform dependencies. |
 | `SpriteGraph` | Scene tree: `Scene` (scale modes, `Duration`-driven update loop, `physicsWorld`), `Node` (`@Node2DBuilder`, `physicsBody`), `Sprite` (9-patch `centerRect`), `Label` (bitmap / SDF `BitmapFont`), `Camera`, `ParticleEmitter` (structure-of-arrays simulation, keyframe sequences), and composable value-type `Action`s. |
 | `SpritePhysics` | Swift API over [Box2D](https://box2d.org) v3: `PhysicsWorld`, `PhysicsBody`, `PhysicsShape`, `PhysicsCategory` masks, contact/sensor notifications, ray casts, and pin / fixed / distance / spring joints. |
-| `SpriteFormats` | Pure-Swift DEFLATE (zlib/gzip) and PNG decoding, SpriteKit `.atlas` / `.atlasc`, libGDX / Spine `.atlas`, and Aseprite JSON sprite sheets with tag animations and 9-patch slices. |
+| `SpriteFormats` | PNG decoding via [swift-png](https://github.com/PureSwift/swift-png), SpriteKit `.atlas` / `.atlasc`, libGDX / Spine `.atlas`, and Aseprite JSON sprite sheets with tag animations and 9-patch slices. |
 | `SpriteSDL` | SDL3 window, input events, and `SDLRenderBackend` batch renderer. |
 | `sprite-viewer` | SDL3 demo and inspector for scenes and the batch renderer. |
 
 ## Requirements
 
-- Swift 6.4
+- Swift 6.4, macOS 15 / iOS 18 or Linux (the primary target)
+- zlib for PNG decoding (swift-png's default `SystemZlib` trait; `apt install zlib1g-dev` on Linux)
 - Box2D 3.x for `SpritePhysics` (and `SpriteGraph`)
   - macOS: `brew install box2d`
   - Linux: build Box2D 3.x from source (distribution packages are still 2.4)
