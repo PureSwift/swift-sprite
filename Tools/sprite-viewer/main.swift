@@ -15,6 +15,8 @@
 //    escape       quit
 //
 
+import Foundation
+import SpriteFormats
 import CSDL3
 import SpriteCore
 import SpriteGraph
@@ -333,7 +335,19 @@ let atlas = try TextureAtlas.make(
     filtering: .nearest
 )
 
-let scene = DemoScene(size: backend.drawableSize, atlas: atlas, font: try .debug(backend: backend))
+let scene: Scene
+if let option = CommandLine.arguments.firstIndex(of: "--tmx") {
+    guard CommandLine.arguments.indices.contains(option + 1) else {
+        throw TiledError.invalid("Usage: sprite-viewer --tmx path/to/map.tmx")
+    }
+    let url = URL(fileURLWithPath: CommandLine.arguments[option + 1])
+    let map = try TiledMap.decode(Data(contentsOf: url), relativeTo: url.deletingLastPathComponent())
+    scene = Scene(size: Vector2(Float(map.columns), Float(map.rows)) * map.tileSize)
+    scene.scaleMode = .aspectFit
+    scene.addChild(try map.makeNode(backend: backend))
+} else {
+    scene = DemoScene(size: backend.drawableSize, atlas: atlas, font: try .debug(backend: backend))
+}
 var running = true
 var lastTicks = SDL_GetTicksNS()
 
@@ -341,7 +355,7 @@ while running {
     for event in window.pollEvents() {
         if case .quit = event { running = false }
         if case .keyDown(.escape, _) = event { running = false }
-        scene.handle(event)
+        (scene as? DemoScene)?.handle(event)
     }
     let now = SDL_GetTicksNS()
     let deltaTime = Duration.nanoseconds(Int64(now - lastTicks))
