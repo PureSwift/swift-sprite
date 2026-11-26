@@ -41,10 +41,18 @@ let package = Package(
             name: "SpriteCore",
             swiftSettings: swiftSettings
         ),
-        // 2D rigid-body physics: bodies, shapes, joints, contacts and ray casts.
+        // System module map for the Box2D v3 C library.
+        .systemLibrary(
+            name: "CBox2D",
+            pkgConfig: "box2d",
+            providers: [
+                .brew(["box2d"]),
+            ]
+        ),
+        // 2D rigid-body physics backed by Box2D: bodies, shapes, joints, contacts and ray casts.
         .target(
             name: "SpritePhysics",
-            dependencies: ["SpriteCore"],
+            dependencies: ["SpriteCore", "CBox2D"],
             swiftSettings: swiftSettings
         ),
         // Scene tree: Scene, Node, Sprite, Label, Camera, Action and ParticleEmitter.
