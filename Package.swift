@@ -40,8 +40,7 @@ let package = Package(
         ),
     ],
     dependencies: [
-        // Until a release tags the Swift `PNG` API; 0.1.1 predates it.
-        .package(url: "https://github.com/PureSwift/swift-png.git", branch: "master"),
+        .package(url: "https://github.com/PureSwift/swift-png.git", from: "0.2.0"),
     ],
     targets: [
         // Pure Swift: 2D math, textures, atlases, quad batching and render backend protocol.
