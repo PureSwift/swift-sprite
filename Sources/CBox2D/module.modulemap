@@ -1,0 +1,5 @@
+module CBox2D [system] {
+    header "shim.h"
+    link "box2d"
+    export *
+}
