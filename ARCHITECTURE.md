@@ -73,7 +73,7 @@ swift-sprite/
 │   ├── SpriteCore/           # Pure Swift: 2D simd math, SpriteBatcher, Texture, TextureAtlas, SpriteRenderBackend
 │   ├── SpriteGraph/          # Idiomatic 2D scene tree: Scene, Node, Sprite, Shape, Label, TileMap, Camera, Action, ParticleEmitter
 │   ├── SpritePhysics/        # Idiomatic Swift wrapper over Box2D v3: bodies, shapes, joints, contacts, raycasts & OptionSet masks
-│   ├── SpriteFormats/        # Pure-Swift codecs: .atlas, Tiled (.tmx / .tsx), Aseprite (.json), .sks archives
+│   ├── SpriteFormats/        # Pure-Swift codecs: DEFLATE, PNG, .atlas/.atlasc, Tiled (.tmx / .tsx), Aseprite (.json), .sks archives
 │   └── SpriteSDL/            # SDL3 windowing, touch/gamepad/mouse input, OpenGL/GLES/Vulkan 2D batch renderer
 ├── Tools/
 │   └── sprite-viewer/        # Cross-platform SDL3 2D scene, atlas & particle inspector
@@ -115,7 +115,10 @@ swift-sprite/
 - **Units**: scene points with 100 points per meter (`b2SetLengthUnitsPerMeter(100)`, process-wide) and a fixed 60 Hz step with 4 substeps.
 
 Platform notes: Homebrew ships Box2D 3.x. Linux distributions currently package Box2D 2.4 (incompatible API), so Linux builds need Box2D 3.x installed from source until distributions catch up.
-4. **Phase 4 — `SpriteFormats`**: Implement `.atlas`, Tiled `.tmx`/`.tsx`, Aseprite `.json`, and binary plist `.sks` archive decoders.
+4. **Phase 4 — `SpriteFormats`**: Implement `.atlas`, Tiled `.tmx`/`.tsx`, Aseprite `.json`, and binary plist `.sks` archive decoders. Delivered in three parts:
+   - **4a — Images & atlases**: pure-Swift DEFLATE (zlib/gzip) and PNG decoders; SpriteKit `.atlas` folders and compiled `.atlasc`, libGDX/Spine text atlases, and Aseprite sheets. Trimmed and rotated regions are restored to their original size and orientation, then repacked.
+   - **4b — Tile maps**: `TileMap` / `TileSet` nodes in `SpriteGraph` and Tiled `.tmx` / `.tsx` decoding.
+   - **4c — Scene archives**: binary property list and `NSKeyedArchiver` decoding of SpriteKit `.sks` files into `SpriteGraph` nodes.
 
 ---
 

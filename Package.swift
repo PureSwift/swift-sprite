@@ -27,6 +27,10 @@ let package = Package(
             targets: ["SpritePhysics"]
         ),
         .library(
+            name: "SpriteFormats",
+            targets: ["SpriteFormats"]
+        ),
+        .library(
             name: "SpriteSDL",
             targets: ["SpriteSDL"]
         ),
@@ -61,6 +65,12 @@ let package = Package(
             dependencies: ["SpriteCore", "SpritePhysics"],
             swiftSettings: swiftSettings
         ),
+        // Asset codecs: DEFLATE, PNG, texture atlases and sprite sheets.
+        .target(
+            name: "SpriteFormats",
+            dependencies: ["SpriteCore", "SpriteGraph"],
+            swiftSettings: swiftSettings
+        ),
         // System module map for the SDL3 C library.
         .systemLibrary(
             name: "CSDL3",
@@ -90,6 +100,14 @@ let package = Package(
         .testTarget(
             name: "SpritePhysicsTests",
             dependencies: ["SpritePhysics"],
+            swiftSettings: swiftSettings
+        ),
+        .testTarget(
+            name: "SpriteFormatsTests",
+            dependencies: ["SpriteFormats"],
+            resources: [
+                .copy("Fixtures"),
+            ],
             swiftSettings: swiftSettings
         ),
         .testTarget(

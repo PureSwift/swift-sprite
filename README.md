@@ -11,6 +11,7 @@ Pure-Swift, prefix-free 2D rendering for Linux, macOS, and iOS. See [ARCHITECTUR
 | `SpriteCore` | 2D math (`Matrix3x3`, `Transform2D`, `Rect`, `Color`), `Texture`, `TextureAtlas`, `SpriteBatcher`, and the `SpriteRenderBackend` protocol. No platform dependencies. |
 | `SpriteGraph` | Scene tree: `Scene` (scale modes, `Duration`-driven update loop, `physicsWorld`), `Node` (`@Node2DBuilder`, `physicsBody`), `Sprite` (9-patch `centerRect`), `Label` (bitmap / SDF `BitmapFont`), `Camera`, `ParticleEmitter` (structure-of-arrays simulation, keyframe sequences), and composable value-type `Action`s. |
 | `SpritePhysics` | Swift API over [Box2D](https://box2d.org) v3: `PhysicsWorld`, `PhysicsBody`, `PhysicsShape`, `PhysicsCategory` masks, contact/sensor notifications, ray casts, and pin / fixed / distance / spring joints. |
+| `SpriteFormats` | Pure-Swift DEFLATE (zlib/gzip) and PNG decoding, SpriteKit `.atlas` / `.atlasc`, libGDX / Spine `.atlas`, and Aseprite JSON sprite sheets with tag animations and 9-patch slices. |
 | `SpriteSDL` | SDL3 window, input events, and `SDLRenderBackend` batch renderer. |
 | `sprite-viewer` | SDL3 demo and inspector for scenes and the batch renderer. |
 
@@ -71,6 +72,21 @@ scene.physicsWorld.onContactBegin = { contact in
     sparks.particleAlphaSequence = KeyframeSequence([(0, 1), (1, 0)])
     scene.addChild(sparks)
 }
+```
+
+### Asset loading
+
+```swift
+import SpriteFormats
+
+// Decoding runs off the main actor; uploading uses the backend.
+let atlases = try await SpriteKitAtlas.decode(at: url.appending(path: "Characters.atlasc"))
+    .makeTextureAtlases(backend: backend)
+let hero = Sprite(texture: atlases[texture: "hero"]!)
+
+let (sheet, decoded) = try await AsepriteSheet.decode(at: url.appending(path: "hero.json"))
+let atlas = try decoded.makeTextureAtlases(backend: backend)[0]
+hero.run(.repeatForever(sheet.animation(tag: "walk", atlas: atlas)!))
 ```
 
 ### Batch renderer

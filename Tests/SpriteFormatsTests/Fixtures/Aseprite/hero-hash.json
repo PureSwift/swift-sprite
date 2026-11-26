@@ -1,0 +1,123 @@
+{
+ "frames": {
+  "hero 2.aseprite": {
+   "frame": {
+    "x": 16,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "rotated": false,
+   "trimmed": true,
+   "spriteSourceSize": {
+    "x": 2,
+    "y": 2,
+    "w": 4,
+    "h": 4
+   },
+   "sourceSize": {
+    "w": 8,
+    "h": 8
+   },
+   "duration": 200
+  },
+  "hero 0.aseprite": {
+   "frame": {
+    "x": 0,
+    "y": 0,
+    "w": 8,
+    "h": 8
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 8,
+    "h": 8
+   },
+   "sourceSize": {
+    "w": 8,
+    "h": 8
+   },
+   "duration": 100
+  },
+  "hero 1.aseprite": {
+   "frame": {
+    "x": 8,
+    "y": 0,
+    "w": 8,
+    "h": 8
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 8,
+    "h": 8
+   },
+   "sourceSize": {
+    "w": 8,
+    "h": 8
+   },
+   "duration": 150
+  }
+ },
+ "meta": {
+  "app": "https://www.aseprite.org/",
+  "version": "1.3",
+  "image": "hero.png",
+  "format": "RGBA8888",
+  "size": {
+   "w": 24,
+   "h": 8
+  },
+  "scale": "1",
+  "frameTags": [
+   {
+    "name": "walk",
+    "from": 0,
+    "to": 2,
+    "direction": "pingpong",
+    "color": "#000000ff"
+   },
+   {
+    "name": "blink",
+    "from": 1,
+    "to": 2,
+    "direction": "reverse",
+    "repeat": "3",
+    "color": "#000000ff"
+   }
+  ],
+  "layers": [],
+  "slices": [
+   {
+    "name": "panel",
+    "color": "#0000ffff",
+    "keys": [
+     {
+      "frame": 0,
+      "bounds": {
+       "x": 0,
+       "y": 0,
+       "w": 8,
+       "h": 8
+      },
+      "center": {
+       "x": 2,
+       "y": 2,
+       "w": 4,
+       "h": 4
+      },
+      "pivot": {
+       "x": 4,
+       "y": 8
+      }
+     }
+    ]
+   }
+  ]
+ }
+}
