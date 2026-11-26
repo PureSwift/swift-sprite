@@ -70,7 +70,7 @@ public final class PhysicsWorld {
         var definition = b2DefaultWorldDef()
         definition.gravity = b2Vec2(x: 0, y: -980)
         definition.restitutionThreshold = restitutionThreshold
-        worldID = b2CreateWorld(&definition)
+        worldID = box2DWorldLock.withLock { b2CreateWorld(&definition) }
     }
 
     deinit {
@@ -79,7 +79,7 @@ public final class PhysicsWorld {
             body.detach()
             body.world = nil
         }
-        b2DestroyWorld(worldID)
+        box2DWorldLock.withLock { b2DestroyWorld(worldID) }
     }
 
     // MARK: - Bodies & joints
