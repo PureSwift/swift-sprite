@@ -1,0 +1,15 @@
+page.png
+	size: 64, 32
+	filter: Nearest, Nearest
+arrow
+	bounds: 2, 2, 8, 16
+	rotate: 90
+trimmed
+	bounds: 20, 2, 6, 4
+	offsets: 3, 6, 16, 12
+walk
+	index: 0
+	bounds: 30, 2, 4, 4
+walk
+	index: 1
+	bounds: 36, 2, 4, 4
