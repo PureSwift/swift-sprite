@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map orientation="orthogonal" width="2" height="2" tilewidth="20" tileheight="20">
+ <tileset firstgid="1" source="tiles.tsx"/>
+ <layer name="Ground" width="2" height="2">
+  <data encoding="csv">1,2147483650,
+0,536870915</data>
+ </layer>
+ <layer name="Overlay" width="2" height="2" opacity="0.5" offsetx="2" offsety="3">
+  <data encoding="csv">0,0,4,0</data>
+ </layer>
+</map>
