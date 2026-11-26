@@ -5,7 +5,9 @@
 //  Renders a SpriteGraph scene through SDLRenderBackend.
 //
 //  Controls:
-//    click        spawn a burst of sprites
+//    click        drop physics boxes and balls
+//    right click  explosion: impulse + particle burst
+//    g            flip gravity
 //    arrow keys   pan the camera
 //    + / -        zoom the camera
 //    space        toggle ignoresSiblingOrder (texture-grouped batching)
@@ -16,6 +18,7 @@
 import CSDL3
 import SpriteCore
 import SpriteGraph
+import SpritePhysics
 import SpriteSDL
 
 /// Generates a checkerboard tile with the given colors.
@@ -43,6 +46,22 @@ func radialDot(size: Int) -> PixelBuffer {
     return buffer
 }
 
+/// Generates a filled circle with a darker rim.
+func ball(size: Int, _ fill: Color, _ rim: Color) -> PixelBuffer {
+    var buffer = PixelBuffer(width: size, height: size)
+    let center = Float(size) / 2
+    for y in 0 ..< size {
+        for x in 0 ..< size {
+            let d = (Vector2(Float(x) + 0.5, Float(y) + 0.5) - center)
+            let distance = (d * d).sum().squareRoot()
+            if distance <= center {
+                buffer[x, y] = distance > center - 3 ? rim : fill
+            }
+        }
+    }
+    return buffer
+}
+
 /// Generates a bordered panel suitable for 9-patch slicing (4 px border).
 func panel(size: Int) -> PixelBuffer {
     var buffer = PixelBuffer(width: size, height: size, fill: Color(rgba: 0x10_12_18_D0))
@@ -64,6 +83,7 @@ final class DemoScene: Scene {
     let atlas: TextureAtlas
     let hud: Label
     let world = Node(name: "world")
+    let props = Node(name: "props")
     let cameraNode = Camera()
     let textureNames = ["orange", "teal", "violet"]
 
@@ -79,6 +99,12 @@ final class DemoScene: Scene {
         backgroundColor = Color(rgba: 0x1B_1D_23_FF)
 
         addChild(world)
+        addChild(props)
+        physicsBody = PhysicsBody(edgeLoopFrom: Rect(origin: .zero, size: size))
+        physicsWorld.onContactBegin = { [weak self] contact in
+            self?.didBegin(contact)
+        }
+        addFountain()
         addChild(cameraNode)
         camera = cameraNode
         cameraNode.position = size * 0.5
@@ -87,7 +113,7 @@ final class DemoScene: Scene {
         let background = Sprite(texture: atlas["panel"]!)
         background.centerRect = Rect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)
         background.anchorPoint = [0, 1]
-        background.size = [300, 64]
+        background.size = [300, 78]
         background.zPosition = 100
         background.name = "hud"
         hud.horizontalAlignmentMode = .left
@@ -99,7 +125,7 @@ final class DemoScene: Scene {
         cameraNode.addChild(background)
         didChangeSize(size)
 
-        for _ in 0 ..< 150 {
+        for _ in 0 ..< 60 {
             spawn(at: Vector2(Float.random(in: 0 ... size.x), Float.random(in: 0 ... size.y)), burst: false)
         }
     }
@@ -144,7 +170,101 @@ final class DemoScene: Scene {
         }
     }
 
+    /// Continuous additive fountain at the bottom of the arena.
+    func addFountain() {
+        let fountain = ParticleEmitter()
+        fountain.name = "fountain"
+        fountain.position = [size.x / 2, 0]
+        fountain.particleTexture = atlas["dot"]
+        fountain.particleBirthRate = 120
+        fountain.particleLifetime = 2.5
+        fountain.particleLifetimeRange = 1
+        fountain.emissionAngle = .pi / 2
+        fountain.emissionAngleRange = 0.35
+        fountain.particleSpeed = 520
+        fountain.particleSpeedRange = 120
+        fountain.yAcceleration = -400
+        fountain.particleScale = 0.6
+        fountain.particleScaleRange = 0.3
+        fountain.particleScaleSpeed = -0.15
+        fountain.particleColorSequence = KeyframeSequence([
+            (0, Color(red: 0.4, green: 0.8, blue: 1)),
+            (0.6, Color(red: 0.2, green: 0.4, blue: 1)),
+            (1, Color(red: 0.1, green: 0.1, blue: 0.5)),
+        ])
+        fountain.particleAlphaSequence = KeyframeSequence([(0, 0), (0.1, 0.8), (1, 0)])
+        fountain.particleBlendMode = .add
+        fountain.zPosition = 5
+        fountain.targetNode = self
+        addChild(fountain)
+    }
+
+    /// Drops a physics box or ball.
+    func drop(at position: Vector2) {
+        let isBall = Bool.random()
+        let sprite: Sprite
+        if isBall {
+            sprite = Sprite(texture: atlas["ball"]!)
+            sprite.size = Vector2(repeating: Float.random(in: 20 ... 40))
+            sprite.physicsBody = PhysicsBody(circleOfRadius: sprite.size.x / 2)
+            sprite.physicsBody?.restitution = 0.6
+        } else {
+            sprite = Sprite(texture: atlas[textureNames.randomElement()!]!)
+            sprite.size = Vector2(Float.random(in: 24 ... 48), Float.random(in: 24 ... 48))
+            sprite.physicsBody = PhysicsBody(rectangleOf: sprite.size)
+        }
+        sprite.position = position
+        sprite.zRotation = Float.random(in: 0 ... .pi)
+        sprite.zPosition = 3
+        sprite.physicsBody?.contactTestBitMask = .all
+        props.addChild(sprite)
+    }
+
+    /// Pushes nearby bodies away and emits a burst of sparks.
+    func explode(at position: Vector2) {
+        for node in props.children {
+            guard let body = node.physicsBody else { continue }
+            let offset = body.position - position
+            let distance = max((offset * offset).sum().squareRoot(), 1)
+            guard distance < 250 else { continue }
+            body.applyImpulse(offset / distance * body.mass * 900 * (1 - distance / 250))
+        }
+        sparks(at: position, count: 80, speed: 400)
+    }
+
+    /// One-shot particle burst that removes itself when done.
+    func sparks(at position: Vector2, count: Int, speed: Float) {
+        let burst = ParticleEmitter()
+        burst.position = position
+        burst.particleTexture = atlas["dot"]
+        burst.particleBirthRate = 10_000
+        burst.numParticlesToEmit = count
+        burst.particleLifetime = 0.6
+        burst.particleLifetimeRange = 0.4
+        burst.emissionAngleRange = 2 * .pi
+        burst.particleSpeed = speed
+        burst.particleSpeedRange = speed
+        burst.yAcceleration = -600
+        burst.particleScale = 0.5
+        burst.particleScaleSpeed = -0.5
+        burst.particleColorSequence = KeyframeSequence([(0, Color(red: 1, green: 0.9, blue: 0.5)), (1, Color(red: 1, green: 0.3, blue: 0))])
+        burst.particleAlphaSequence = KeyframeSequence([(0, 1), (1, 0)])
+        burst.particleBlendMode = .add
+        burst.zPosition = 20
+        addChild(burst)
+        burst.run(.sequence([.wait(for: .seconds(1.2)), .removeFromParent()]))
+    }
+
+    /// Hard impacts throw sparks.
+    func didBegin(_ contact: PhysicsContact) {
+        guard contact.collisionImpulse > 4000 else { return }
+        sparks(at: contact.contactPoint, count: 12, speed: 150)
+    }
+
     override func didChangeSize(_ oldSize: Vector2) {
+        // Keep the arena matching the window.
+        physicsBody = PhysicsBody(edgeLoopFrom: Rect(origin: .zero, size: size))
+        childNode(withName: "fountain")?.position = [size.x / 2, 0]
         // Keep the HUD pinned to the top-left of the visible area.
         childNode(withName: "//hud")?.position = Vector2(-size.x / 2 + 12, size.y / 2 - 12)
     }
@@ -162,14 +282,19 @@ final class DemoScene: Scene {
 
     override func didFinishUpdate() {
         let sorting = ignoresSiblingOrder ? "GROUPED" : "ORDERED"
-        hud.text = "\(fps) FPS  \(world.children.count) SPRITES\nZOOM \(Int(100 / cameraNode.xScale))%  \(sorting)\(isPaused ? "  PAUSED" : "")"
+        let particles = children.compactMap { $0 as? ParticleEmitter }.reduce(0) { $0 + $1.particleCount }
+        hud.text = "\(fps) FPS  \(world.children.count + props.children.count) SPRITES\n\(props.children.count) BODIES  \(particles) PARTICLES\nZOOM \(Int(100 / cameraNode.xScale))%  \(sorting)\(isPaused ? "  PAUSED" : "")"
     }
 
     func handle(_ event: InputEvent) {
         switch event {
+        case let .mouseDown(.right, point):
+            explode(at: convertPoint(fromView: point))
         case let .mouseDown(_, point):
             let position = convertPoint(fromView: point)
-            for _ in 0 ..< 20 { spawn(at: position, burst: true) }
+            for i in 0 ..< 3 { drop(at: position + Vector2(0, Float(i) * 50)) }
+        case .keyDown(.character("g")!, isRepeat: false):
+            physicsWorld.gravity = -physicsWorld.gravity
         case .keyDown(.space, isRepeat: false):
             ignoresSiblingOrder.toggle()
         case .keyDown(.character("p")!, isRepeat: false):
@@ -202,6 +327,7 @@ let atlas = try TextureAtlas.make(
         "violet": checkerboard(size: 32, cell: 4, Color(rgba: 0x6A_4C_93_FF), Color(rgba: 0xC9_B6_E4_FF)),
         "dot": radialDot(size: 32),
         "panel": panel(size: 16),
+        "ball": ball(size: 64, Color(rgba: 0xE8_5D_75_FF), Color(rgba: 0x8C_2A_3E_FF)),
     ],
     backend: backend,
     filtering: .nearest
