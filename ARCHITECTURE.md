@@ -2,10 +2,10 @@
 
 ## Overview
 
-Two decoupled, 100% pure-Swift repositories provide modern, prefix-free, idiomatic Swift APIs for 3D and 2D rendering, physics, and asset codecs across Linux, macOS, and iOS—while serving as the underlying engines for **Perry**'s `SceneKit`, `QuickDraw 3D`, and `SpriteKit` compatibility layers.
+Two decoupled, Swift-first repositories provide modern, prefix-free, idiomatic Swift APIs for 3D and 2D rendering, physics, and asset codecs across Linux, macOS, and iOS—while serving as the underlying engines for **Perry**'s `SceneKit`, `QuickDraw 3D`, and `SpriteKit` compatibility layers.
 
 - **`swift-scene`**: Unified 3D monorepo porting `PerryUIKit/SceneKit.swift` and **Quesa** (`jwwalker/quesa`) into pure Swift, paired with a RealityKit-inspired ECS (`SceneReality`) and pure-Swift OpenUSD/USDZ support (`SceneUSD`).
-- **`swift-sprite`**: Standalone 2D monorepo providing batch-rendered sprites, tile maps, particle systems, and 2D rigid-body physics with zero coupling to `swift-scene`.
+- **`swift-sprite`**: Standalone 2D monorepo providing batch-rendered sprites, tile maps, particle systems, and 2D rigid-body physics (a Swift API over Box2D v3) with zero coupling to `swift-scene`.
 - **`Perry` Integration**: Thin Objective-C/Swift ABI shims (`PerrySceneKit`, `PerrySpriteKit`, and QD3D symbol exports) that delegate to `swift-scene` and `swift-sprite` and handle cross-engine FBO texture interop locally inside Perry.
 
 ---
@@ -68,9 +68,11 @@ swift-sprite/
 ├── Package.swift
 ├── README.md
 ├── Sources/
+│   ├── CBox2D/               # System library module for Box2D v3 (pkg-config `box2d`)
+│   ├── CSDL3/                # System library module for SDL3 (pkg-config `sdl3`)
 │   ├── SpriteCore/           # Pure Swift: 2D simd math, SpriteBatcher, Texture, TextureAtlas, SpriteRenderBackend
 │   ├── SpriteGraph/          # Idiomatic 2D scene tree: Scene, Node, Sprite, Shape, Label, TileMap, Camera, Action, ParticleEmitter
-│   ├── SpritePhysics/        # Pure-Swift 2D impulse rigid-body solver, joints, raycasts & OptionSet collision masks
+│   ├── SpritePhysics/        # Idiomatic Swift wrapper over Box2D v3: bodies, shapes, joints, contacts, raycasts & OptionSet masks
 │   ├── SpriteFormats/        # Pure-Swift codecs: .atlas, Tiled (.tmx / .tsx), Aseprite (.json), .sks archives
 │   └── SpriteSDL/            # SDL3 windowing, touch/gamepad/mouse input, OpenGL/GLES/Vulkan 2D batch renderer
 ├── Tools/
@@ -93,14 +95,26 @@ swift-sprite/
 | `SKAction` | `Action` | Value-type composable animations (`.sequence`, `.group`, `.repeatForever`) with `Duration` timing. |
 | `SKTileMapNode` / `SKTileSet` | `TileMap`, `TileSet` | Chunked quad-buffer tile rendering supporting `.tmx` and `.sks` tile maps. |
 | `SKEmitterNode` | `ParticleEmitter` | Contiguous Structure-of-Arrays (SOA) particle simulation with configurable emission ramps. |
-| `SKPhysicsWorld` / `SKPhysicsBody` | `PhysicsWorld`, `PhysicsBody` | Type-safe `OptionSet` collision categories and closure/async contact notifications. |
+| `SKPhysicsWorld` / `SKPhysicsBody` | `PhysicsWorld`, `PhysicsBody` | Box2D v3 simulation behind a Swift API with type-safe `OptionSet` collision categories and closure contact notifications. |
+| `SKPhysicsJoint*` | `PinJoint`, `FixedJoint`, `DistanceJoint`, `SpringJoint` | Box2D revolute, weld and distance joints. |
 | `SKLabelNode` | `Label` | Signed-distance-field (SDF) / bitmap glyph batching for resolution-independent text. |
 
 ### `swift-sprite` Execution Phases
 
 1. **Phase 1 — `SpriteCore` + `SpriteSDL` Batch Renderer**: Build the `zPosition`/texture-sorted quad batcher, `simd_float3x3` transform hierarchy, and `TextureAtlas` loader.
 2. **Phase 2 — `SpriteGraph` Core**: Implement `Scene`, `Node`, `Sprite` (with 9-patch slicing), `Camera`, `Action`, and SDF/bitmap `Label`.
-3. **Phase 3 — `SpritePhysics` & `ParticleEmitter`**: Implement the 2D rigid-body impulse solver, joints, raycasts, and SOA particle simulator.
+3. **Phase 3 — `SpritePhysics` & `ParticleEmitter`**: Wrap Box2D v3 (bodies, shapes, joints, contact/sensor events, ray casts) behind the `SpritePhysics` API, integrate physics bodies into the `SpriteGraph` node tree, and implement the SOA particle simulator.
+
+### Physics Backend: Box2D v3
+
+`SpritePhysics` delegates simulation to [Box2D](https://github.com/erincatto/box2d) v3 (MIT), linked as a system library through the `CBox2D` module and pkg-config (`brew install box2d`). Rather than re-implementing a solver, the Swift layer provides:
+
+- **Value-type shape descriptions** (`PhysicsShape`) decomposed into Box2D circles, polygons (split at Box2D's 8-vertex limit) and two-sided segments.
+- **Detachable bodies**: `PhysicsBody` can be configured before it joins a world; state round-trips when the Box2D body is created or destroyed.
+- **SpriteKit-style filtering**: `categoryBitMask` / `collisionBitMask` map to Box2D filters (collisions are mutual), an empty collision mask turns a body into a Box2D sensor, and `contactTestBitMask` filters body-level begin/end notifications merged from Box2D contact and sensor events.
+- **Units**: scene points with 100 points per meter (`b2SetLengthUnitsPerMeter(100)`, process-wide) and a fixed 60 Hz step with 4 substeps.
+
+Platform notes: Homebrew ships Box2D 3.x. Linux distributions currently package Box2D 2.4 (incompatible API), so Linux builds need Box2D 3.x installed from source until distributions catch up.
 4. **Phase 4 — `SpriteFormats`**: Implement `.atlas`, Tiled `.tmx`/`.tsx`, Aseprite `.json`, and binary plist `.sks` archive decoders.
 
 ---
