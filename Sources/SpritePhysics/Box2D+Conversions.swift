@@ -11,6 +11,7 @@ import Glibc
 import Musl
 #endif
 import CBox2D
+import Foundation
 import SpriteCore
 
 extension b2Vec2 {
@@ -71,6 +72,10 @@ func normalize(_ v: Vector2) -> Vector2 {
     let len = length(v)
     return len > .ulpOfOne ? v / len : .zero
 }
+
+/// Serializes `b2CreateWorld` / `b2DestroyWorld`, which update Box2D's global world
+/// table without synchronization. Separate worlds may otherwise be used concurrently.
+let box2DWorldLock = NSLock()
 
 /// Box2D is tuned for meters; scene units are points with 100 points per meter.
 ///
