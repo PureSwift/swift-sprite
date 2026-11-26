@@ -19,6 +19,10 @@ let package = Package(
             targets: ["SpriteCore"]
         ),
         .library(
+            name: "SpriteGraph",
+            targets: ["SpriteGraph"]
+        ),
+        .library(
             name: "SpriteSDL",
             targets: ["SpriteSDL"]
         ),
@@ -31,6 +35,12 @@ let package = Package(
         // Pure Swift: 2D math, textures, atlases, quad batching and render backend protocol.
         .target(
             name: "SpriteCore",
+            swiftSettings: swiftSettings
+        ),
+        // Scene tree: Scene, Node, Sprite, Label, Camera and Action.
+        .target(
+            name: "SpriteGraph",
+            dependencies: ["SpriteCore"],
             swiftSettings: swiftSettings
         ),
         // System module map for the SDL3 C library.
@@ -50,13 +60,18 @@ let package = Package(
         ),
         .executableTarget(
             name: "sprite-viewer",
-            dependencies: ["SpriteCore", "SpriteSDL"],
+            dependencies: ["SpriteCore", "SpriteGraph", "SpriteSDL"],
             path: "Tools/sprite-viewer",
             swiftSettings: swiftSettings
         ),
         .testTarget(
             name: "SpriteCoreTests",
             dependencies: ["SpriteCore"],
+            swiftSettings: swiftSettings
+        ),
+        .testTarget(
+            name: "SpriteGraphTests",
+            dependencies: ["SpriteGraph"],
             swiftSettings: swiftSettings
         ),
     ]

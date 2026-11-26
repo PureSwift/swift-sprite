@@ -15,6 +15,17 @@ public enum BlendMode: Hashable, Comparable, Sendable {
     case replace
 }
 
+/// Fragment shading applied to a quad's texture.
+public enum SpriteShader: Hashable, Sendable {
+    /// Texture color multiplied by vertex color.
+    case standard
+    /// Texture alpha holds a signed distance field; the edge is reconstructed at
+    /// `0.5` with the given smoothing width (in distance units).
+    ///
+    /// Backends without programmable shading may fall back to ``standard``.
+    case distanceField(smoothing: Float)
+}
+
 /// Single textured quad submitted to a ``SpriteBatcher``.
 public struct SpriteQuad: Sendable {
 
@@ -35,6 +46,8 @@ public struct SpriteQuad: Sendable {
 
     public var blendMode: BlendMode
 
+    public var shader: SpriteShader
+
     public init(
         texture: Texture = .none,
         transform: Matrix3x3 = .identity,
@@ -42,7 +55,8 @@ public struct SpriteQuad: Sendable {
         anchorPoint: Vector2 = Vector2(0.5, 0.5),
         color: Color = .white,
         zPosition: Float = 0,
-        blendMode: BlendMode = .alpha
+        blendMode: BlendMode = .alpha,
+        shader: SpriteShader = .standard
     ) {
         self.texture = texture
         self.transform = transform
@@ -51,6 +65,7 @@ public struct SpriteQuad: Sendable {
         self.color = color
         self.zPosition = zPosition
         self.blendMode = blendMode
+        self.shader = shader
     }
 }
 
@@ -71,12 +86,14 @@ public struct SpriteVertex: Equatable, Sendable {
     }
 }
 
-/// Contiguous range of indices drawn with a single texture and blend state.
+/// Contiguous range of indices drawn with a single texture, blend and shader state.
 public struct DrawBatch: Equatable, Sendable {
 
     public var texture: TextureID
 
     public var blendMode: BlendMode
+
+    public var shader: SpriteShader = .standard
 
     /// Range into ``SpriteFrame/indices``.
     public var indexRange: Range<Int>
@@ -154,12 +171,14 @@ public struct SpriteBatcher: Sendable {
 
             if let last = frame.batches.indices.last,
                frame.batches[last].texture == quad.texture.id,
-               frame.batches[last].blendMode == quad.blendMode {
+               frame.batches[last].blendMode == quad.blendMode,
+               frame.batches[last].shader == quad.shader {
                 frame.batches[last].indexRange = frame.batches[last].indexRange.lowerBound ..< frame.indices.count
             } else {
                 frame.batches.append(DrawBatch(
                     texture: quad.texture.id,
                     blendMode: quad.blendMode,
+                    shader: quad.shader,
                     indexRange: start ..< frame.indices.count
                 ))
             }

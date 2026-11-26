@@ -88,6 +88,14 @@ import Testing
         #expect(frame.batches.map(\.indexRange) == [0 ..< 6, 6 ..< 18])
     }
 
+    @Test func shaderBreaksBatches() {
+        var batcher = SpriteBatcher()
+        batcher.submit(SpriteQuad(texture: textureA))
+        batcher.submit(SpriteQuad(texture: textureA, shader: .distanceField(smoothing: 0.1)))
+        let frame = batcher.makeFrame()
+        #expect(frame.batches.map(\.shader) == [.standard, .distanceField(smoothing: 0.1)])
+    }
+
     @Test func backendReceivesFrame() throws {
         let backend = MockBackend()
         var batcher = SpriteBatcher()
