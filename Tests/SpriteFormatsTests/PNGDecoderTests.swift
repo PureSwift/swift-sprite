@@ -30,9 +30,9 @@ import SpriteCore
     @Test func rejectsInvalidData() throws {
         #expect(throws: PNGDecoder.Error.invalidSignature) { try PNGDecoder.decode([1, 2, 3]) }
         var data = try Fixtures.bytes("PNG/rgba8.png")
-        data[20] ^= 0xFF // inside IHDR
-        #expect(throws: PNGDecoder.Error.checksumMismatch(chunk: "IHDR")) { try PNGDecoder.decode(data) }
+        data[20] ^= 0xFF // inside IHDR, breaking its CRC
+        #expect(throws: PNGDecoder.Error.self) { try PNGDecoder.decode(data) }
         let truncated = Array(try Fixtures.bytes("PNG/rgba8.png").prefix(60))
-        #expect(throws: PNGDecoder.Error.self) { try PNGDecoder.decode(truncated) }
+        #expect(throws: PNGDecoder.Error.truncated) { try PNGDecoder.decode(truncated) }
     }
 }

@@ -1,0 +1,24 @@
+{
+  "originHash" : "ea0c5648eea01e9a5b4e520ed80957720eee8dfddb6a482d323e4809ae398a3d",
+  "pins" : [
+    {
+      "identity" : "swift-png",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/PureSwift/swift-png.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "2d81cf0ae46e5ea1224baed8483a536fcaf8185f"
+      }
+    },
+    {
+      "identity" : "swift-zlib",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/PureSwift/swift-zlib.git",
+      "state" : {
+        "revision" : "a937e711592ad4c59675cca92e2b6dab5b1dc187",
+        "version" : "1.0.8"
+      }
+    }
+  ],
+  "version" : 3
+}
