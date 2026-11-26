@@ -23,6 +23,10 @@ let package = Package(
             targets: ["SpriteGraph"]
         ),
         .library(
+            name: "SpritePhysics",
+            targets: ["SpritePhysics"]
+        ),
+        .library(
             name: "SpriteSDL",
             targets: ["SpriteSDL"]
         ),
@@ -37,10 +41,16 @@ let package = Package(
             name: "SpriteCore",
             swiftSettings: swiftSettings
         ),
-        // Scene tree: Scene, Node, Sprite, Label, Camera and Action.
+        // 2D rigid-body physics: bodies, shapes, joints, contacts and ray casts.
+        .target(
+            name: "SpritePhysics",
+            dependencies: ["SpriteCore"],
+            swiftSettings: swiftSettings
+        ),
+        // Scene tree: Scene, Node, Sprite, Label, Camera, Action and ParticleEmitter.
         .target(
             name: "SpriteGraph",
-            dependencies: ["SpriteCore"],
+            dependencies: ["SpriteCore", "SpritePhysics"],
             swiftSettings: swiftSettings
         ),
         // System module map for the SDL3 C library.
@@ -60,13 +70,18 @@ let package = Package(
         ),
         .executableTarget(
             name: "sprite-viewer",
-            dependencies: ["SpriteCore", "SpriteGraph", "SpriteSDL"],
+            dependencies: ["SpriteCore", "SpriteGraph", "SpritePhysics", "SpriteSDL"],
             path: "Tools/sprite-viewer",
             swiftSettings: swiftSettings
         ),
         .testTarget(
             name: "SpriteCoreTests",
             dependencies: ["SpriteCore"],
+            swiftSettings: swiftSettings
+        ),
+        .testTarget(
+            name: "SpritePhysicsTests",
+            dependencies: ["SpritePhysics"],
             swiftSettings: swiftSettings
         ),
         .testTarget(
