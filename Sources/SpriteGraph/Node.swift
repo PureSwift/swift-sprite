@@ -4,6 +4,7 @@
 //
 
 import SpriteCore
+import SpritePhysics
 
 /// Base element of the 2D scene tree.
 ///
@@ -41,6 +42,22 @@ open class Node {
     public private(set) var children: [Node] = []
 
     var actions: [RunningAction] = []
+
+    /// Rigid body simulated by the containing scene's ``Scene/physicsWorld``.
+    ///
+    /// The body follows the node while the node is moved directly (or by actions),
+    /// and dynamic bodies write their simulated position and rotation back to the node.
+    public var physicsBody: PhysicsBody? {
+        didSet {
+            guard oldValue !== physicsBody else { return }
+            if oldValue?.owner === self { oldValue?.owner = nil }
+            physicsBody?.owner = self
+            physicsSyncedTransform = nil
+        }
+    }
+
+    /// Scene-space transform last exchanged with ``physicsBody``, to detect direct node moves.
+    var physicsSyncedTransform: (position: Vector2, rotation: Float)?
 
     // MARK: - Initialization
 
@@ -232,6 +249,12 @@ open class Node {
         }
         visit(self)
     }
+
+    // MARK: - Simulation
+
+    /// Per-frame simulation hook (e.g. particles), called with time scaled by `speed`
+    /// and skipped while paused.
+    func simulate(seconds: Double) { }
 
     // MARK: - Rendering
 
