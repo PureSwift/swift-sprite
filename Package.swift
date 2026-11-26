@@ -23,6 +23,10 @@ let package = Package(
             targets: ["SpriteGraph"]
         ),
         .library(
+            name: "SpritePhysics",
+            targets: ["SpritePhysics"]
+        ),
+        .library(
             name: "SpriteSDL",
             targets: ["SpriteSDL"]
         ),
@@ -37,10 +41,24 @@ let package = Package(
             name: "SpriteCore",
             swiftSettings: swiftSettings
         ),
-        // Scene tree: Scene, Node, Sprite, Label, Camera and Action.
+        // System module map for the Box2D v3 C library.
+        .systemLibrary(
+            name: "CBox2D",
+            pkgConfig: "box2d",
+            providers: [
+                .brew(["box2d"]),
+            ]
+        ),
+        // 2D rigid-body physics backed by Box2D: bodies, shapes, joints, contacts and ray casts.
+        .target(
+            name: "SpritePhysics",
+            dependencies: ["SpriteCore", "CBox2D"],
+            swiftSettings: swiftSettings
+        ),
+        // Scene tree: Scene, Node, Sprite, Label, Camera, Action and ParticleEmitter.
         .target(
             name: "SpriteGraph",
-            dependencies: ["SpriteCore"],
+            dependencies: ["SpriteCore", "SpritePhysics"],
             swiftSettings: swiftSettings
         ),
         // System module map for the SDL3 C library.
@@ -60,13 +78,18 @@ let package = Package(
         ),
         .executableTarget(
             name: "sprite-viewer",
-            dependencies: ["SpriteCore", "SpriteGraph", "SpriteSDL"],
+            dependencies: ["SpriteCore", "SpriteGraph", "SpritePhysics", "SpriteSDL"],
             path: "Tools/sprite-viewer",
             swiftSettings: swiftSettings
         ),
         .testTarget(
             name: "SpriteCoreTests",
             dependencies: ["SpriteCore"],
+            swiftSettings: swiftSettings
+        ),
+        .testTarget(
+            name: "SpritePhysicsTests",
+            dependencies: ["SpritePhysics"],
             swiftSettings: swiftSettings
         ),
         .testTarget(

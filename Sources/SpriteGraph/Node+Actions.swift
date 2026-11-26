@@ -79,6 +79,7 @@ extension Node {
         if !actions.isEmpty {
             advanceActions(by: scaled)
         }
+        simulate(seconds: scaled)
         // Iterate a snapshot; actions may add or remove children.
         for child in children {
             child.evaluateActions(seconds: scaled)

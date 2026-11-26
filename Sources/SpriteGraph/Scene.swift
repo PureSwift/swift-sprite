@@ -4,6 +4,7 @@
 //
 
 import SpriteCore
+import SpritePhysics
 
 /// Root node of a scene tree that advances actions and produces frames for a viewport.
 open class Scene: Node {
@@ -46,6 +47,9 @@ open class Scene: Node {
 
     private var context = RenderContext()
 
+    /// Physics simulation for bodies attached to nodes in this scene.
+    public let physicsWorld = PhysicsWorld()
+
     public init(size: Vector2) {
         self.size = size
         super.init()
@@ -59,6 +63,9 @@ open class Scene: Node {
     /// Called after actions are evaluated each frame.
     open func didEvaluateActions() { }
 
+    /// Called after physics is simulated each frame.
+    open func didSimulatePhysics() { }
+
     /// Called at the end of each ``advance(by:)``.
     open func didFinishUpdate() { }
 
@@ -67,12 +74,15 @@ open class Scene: Node {
 
     // MARK: - Update loop
 
-    /// Advances the scene by one frame: `update`, actions, then `didFinishUpdate`.
+    /// Advances the scene by one frame: `update`, actions, physics, then `didFinishUpdate`.
     public func advance(by deltaTime: Duration) {
         guard !isPaused else { return }
         update(deltaTime)
-        evaluateActions(seconds: max(deltaTime.seconds, 0))
+        let seconds = max(deltaTime.seconds, 0)
+        evaluateActions(seconds: seconds)
         didEvaluateActions()
+        simulatePhysics(seconds: seconds)
+        didSimulatePhysics()
         didFinishUpdate()
     }
 
