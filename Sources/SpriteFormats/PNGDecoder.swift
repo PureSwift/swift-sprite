@@ -43,8 +43,7 @@ public enum PNGDecoder {
         // A short read is zero-filled to keep the decoder running; report it as truncation.
         if source.overrun { throw .truncated }
         switch result {
-        case var .success(image):
-            applyLowDepthGrayKey(data, to: &image)
+        case let .success(image):
             return image
         case let .failure(diagnostic):
             throw .invalidData(String(describing: diagnostic.message))
@@ -96,35 +95,6 @@ public enum PNGDecoder {
         }
         try context.readEnd(into: nil)
         return PixelBuffer(width: width, height: height, pixels: pixels)
-    }
-
-    /// Workaround for swift-png not scaling a `tRNS` gray key when expanding 1/2/4-bit
-    /// grayscale to 8 bits (libpng scales it, so keyed pixels become transparent).
-    /// Remove once swift-png applies the scaled key itself.
-    private static func applyLowDepthGrayKey(_ data: [UInt8], to image: inout PixelBuffer) {
-        var bitDepth = 0, colorType = -1
-        var key: Int?
-        var offset = signature.count
-        while offset + 12 <= data.count {
-            let length = Int(data[offset]) << 24 | Int(data[offset + 1]) << 16 | Int(data[offset + 2]) << 8 | Int(data[offset + 3])
-            let type = data[offset + 4 ..< offset + 8]
-            let body = offset + 8
-            guard length >= 0, body + length <= data.count else { return }
-            if type.elementsEqual("IHDR".utf8), length == 13 {
-                bitDepth = Int(data[body + 8])
-                colorType = Int(data[body + 9])
-            } else if type.elementsEqual("tRNS".utf8), length == 2 {
-                key = Int(data[body]) << 8 | Int(data[body + 1])
-            } else if type.elementsEqual("IDAT".utf8) {
-                break
-            }
-            offset = body + length + 4
-        }
-        guard colorType == 0, bitDepth < 8, let key else { return }
-        let scaled = UInt8(truncatingIfNeeded: (key & ((1 << bitDepth) - 1)) * (255 / ((1 << bitDepth) - 1)))
-        for i in stride(from: 0, to: image.pixels.count, by: 4) where image.pixels[i] == scaled {
-            image.pixels[i + 3] = 0
-        }
     }
 
     /// Input bytes served to the decoder's read callback.
