@@ -1,13 +1,13 @@
 {
-  "originHash" : "ea0c5648eea01e9a5b4e520ed80957720eee8dfddb6a482d323e4809ae398a3d",
+  "originHash" : "426659201a09428f7dc0068dbbe9e7c27f059d14bd3d7740230fb9297dc52e6c",
   "pins" : [
     {
       "identity" : "swift-png",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/PureSwift/swift-png.git",
       "state" : {
-        "branch" : "master",
-        "revision" : "2d81cf0ae46e5ea1224baed8483a536fcaf8185f"
+        "revision" : "bf2645804d8e9455afa14e01644d376cb7da24bf",
+        "version" : "0.2.0"
       }
     },
     {
