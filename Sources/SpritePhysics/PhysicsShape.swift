@@ -3,6 +3,7 @@
 //  SpritePhysics
 //
 
+import CBox2D
 import SpriteCore
 
 /// Collision geometry of a ``PhysicsBody`` in the body's local coordinates.
@@ -38,142 +39,123 @@ public indirect enum PhysicsShape: Equatable, Sendable {
     }
 }
 
-// MARK: - Convex parts
+// MARK: - Primitives
 
-/// Convex primitive used internally for collision, mass and queries.
-enum ConvexPart: Equatable {
+/// Box2D primitive making up a shape.
+enum ShapePrimitive {
 
-    case circle(center: Vector2, radius: Float)
+    case circle(b2Circle)
 
-    /// Counter-clockwise vertices with outward edge normals.
-    /// Two vertices represent a segment with normals on both sides.
-    case polygon(vertices: [Vector2], normals: [Vector2])
+    case polygon(b2Polygon)
 
-    static func polygon(_ points: [Vector2]) -> ConvexPart? {
-        let hull = convexHull(points)
-        switch hull.count {
-        case 0, 1:
-            return nil
-        case 2:
-            return segment(hull[0], hull[1])
-        default:
-            let normals = hull.indices.map { i in
-                let edge = hull[(i + 1) % hull.count] - hull[i]
-                return normalize(Vector2(edge.y, -edge.x))
-            }
-            return .polygon(vertices: hull, normals: normals)
-        }
-    }
+    case segment(b2Segment)
 
-    static func segment(_ a: Vector2, _ b: Vector2) -> ConvexPart? {
-        let edge = b - a
-        guard dot(edge, edge) > .ulpOfOne else { return nil }
-        let normal = normalize(Vector2(edge.y, -edge.x))
-        return .polygon(vertices: [a, b], normals: [normal, -normal])
-    }
-
-    func transformed(by transform: RigidTransform) -> ConvexPart {
-        switch self {
-        case let .circle(center, radius):
-            .circle(center: transform.apply(center), radius: radius)
-        case let .polygon(vertices, normals):
-            .polygon(
-                vertices: vertices.map(transform.apply),
-                normals: normals.map(transform.rotation.apply)
-            )
-        }
-    }
-
-    var bounds: Rect {
-        switch self {
-        case let .circle(center, radius):
-            return Rect(origin: center - radius, size: Vector2(repeating: radius * 2))
-        case let .polygon(vertices, _):
-            var lo = vertices[0], hi = vertices[0]
-            for v in vertices.dropFirst() {
-                lo = pointwiseMin(lo, v)
-                hi = pointwiseMax(hi, v)
-            }
-            return Rect(origin: lo, size: hi - lo)
-        }
-    }
-
-    func contains(_ point: Vector2) -> Bool {
-        switch self {
-        case let .circle(center, radius):
-            let d = point - center
-            return dot(d, d) <= radius * radius
-        case let .polygon(vertices, normals):
-            guard vertices.count >= 3 else { return false }
-            return vertices.indices.allSatisfy { dot(normals[$0], point - vertices[$0]) <= 0 }
-        }
-    }
-
-    /// Mass, center of mass and rotational inertia about the local origin.
-    func massData(density: Float) -> (mass: Float, center: Vector2, inertia: Float) {
-        switch self {
-        case let .circle(center, radius):
-            let mass = density * .pi * radius * radius
-            return (mass, center, mass * (0.5 * radius * radius + dot(center, center)))
-        case let .polygon(vertices, _):
-            guard vertices.count >= 3 else { return (0, vertices.reduce(.zero, +) / Float(vertices.count), 0) }
-            // Triangle fan about the first vertex.
-            let reference = vertices[0]
-            var area: Float = 0
-            var center = Vector2.zero
-            var inertia: Float = 0
-            for i in 1 ..< vertices.count - 1 {
-                let e1 = vertices[i] - reference
-                let e2 = vertices[i + 1] - reference
-                let d = cross(e1, e2)
-                let triangleArea = 0.5 * d
-                area += triangleArea
-                center += triangleArea * (e1 + e2) / 3
-                let intx2 = e1.x * e1.x + e2.x * e1.x + e2.x * e2.x
-                let inty2 = e1.y * e1.y + e2.y * e1.y + e2.y * e2.y
-                inertia += (0.25 / 3 * d) * (intx2 + inty2)
-            }
-            let mass = density * area
-            let relativeCenter = center / area
-            let worldCenter = relativeCenter + reference
-            // Shift inertia from the reference vertex to the origin via the center of mass.
-            let originInertia = density * inertia + mass * (dot(worldCenter, worldCenter) - dot(relativeCenter, relativeCenter))
-            return (mass, worldCenter, originInertia)
-        }
-    }
-
+    /// Area used for density and mass computations.
     var area: Float {
-        massData(density: 1).mass
+        switch self {
+        case let .circle(circle):
+            return .pi * circle.radius * circle.radius
+        case var .polygon(polygon):
+            return b2ComputePolygonMass(&polygon, 1).mass
+        case .segment:
+            return 0
+        }
+    }
+
+    func massData(density: Float) -> b2MassData {
+        switch self {
+        case var .circle(circle):
+            return b2ComputeCircleMass(&circle, density)
+        case var .polygon(polygon):
+            return b2ComputePolygonMass(&polygon, density)
+        case .segment:
+            return b2MassData(mass: 0, center: b2Vec2(x: 0, y: 0), rotationalInertia: 0)
+        }
+    }
+
+    /// Local-space vertices of polygons and segments (circles are handled by radius).
+    var boundsPoints: [Vector2] {
+        switch self {
+        case let .circle(circle):
+            return [Vector2(circle.center)]
+        case let .polygon(polygon):
+            return withUnsafeBytes(of: polygon.vertices) { buffer in
+                Array(buffer.bindMemory(to: b2Vec2.self).prefix(Int(polygon.count))).map(Vector2.init)
+            }
+        case let .segment(segment):
+            return [Vector2(segment.point1), Vector2(segment.point2)]
+        }
+    }
+
+    /// Creates the primitive on a Box2D body.
+    @discardableResult
+    func create(on body: b2BodyId, definition: inout b2ShapeDef) -> b2ShapeId {
+        switch self {
+        case var .circle(circle):
+            return b2CreateCircleShape(body, &definition, &circle)
+        case var .polygon(polygon):
+            return b2CreatePolygonShape(body, &definition, &polygon)
+        case var .segment(segment):
+            return b2CreateSegmentShape(body, &definition, &segment)
+        }
     }
 }
 
 extension PhysicsShape {
 
-    /// Decomposes the shape into convex parts.
-    var parts: [ConvexPart] {
+    /// Decomposes the shape into Box2D primitives.
+    var primitives: [ShapePrimitive] {
         switch self {
         case let .circle(radius, center):
-            return radius > 0 ? [.circle(center: center, radius: radius)] : []
+            guard radius > 0 else { return [] }
+            return [.circle(b2Circle(center: b2Vec2(center), radius: radius))]
         case let .rectangle(size, center):
-            let half = size * 0.5
-            return [ConvexPart.polygon([
-                center + Vector2(-half.x, -half.y),
-                center + Vector2(half.x, -half.y),
-                center + Vector2(half.x, half.y),
-                center + Vector2(-half.x, half.y),
-            ])].compactMap { $0 }
+            guard size.x > 0, size.y > 0 else { return [] }
+            return [.polygon(b2MakeOffsetBox(size.x / 2, size.y / 2, b2Vec2(center), b2Rot(c: 1, s: 0)))]
         case let .polygon(points):
-            return [ConvexPart.polygon(points)].compactMap { $0 }
+            return Self.convexPolygons(points).map(ShapePrimitive.polygon)
         case let .edge(from, to):
-            return [ConvexPart.segment(from, to)].compactMap { $0 }
+            return Self.segments([from, to])
         case let .edgeChain(points):
-            return zip(points, points.dropFirst()).compactMap { ConvexPart.segment($0, $1) }
+            return Self.segments(points)
         case let .edgeLoop(points):
+            // Two-sided segments rather than a one-sided Box2D chain, so loops
+            // contain bodies on either side.
             guard let first = points.first else { return [] }
-            let closed = points + [first]
-            return zip(closed, closed.dropFirst()).compactMap { ConvexPart.segment($0, $1) }
+            return Self.segments(points + [first])
         case let .compound(shapes):
-            return shapes.flatMap(\.parts)
+            return shapes.flatMap(\.primitives)
+        }
+    }
+
+    private static func segments(_ points: [Vector2]) -> [ShapePrimitive] {
+        zip(points, points.dropFirst()).compactMap { a, b in
+            length(b - a) > .ulpOfOne ? .segment(b2Segment(point1: b2Vec2(a), point2: b2Vec2(b))) : nil
+        }
+    }
+
+    /// Convex hull as Box2D polygons, fanned into several when it exceeds Box2D's vertex limit.
+    private static func convexPolygons(_ points: [Vector2]) -> [b2Polygon] {
+        let hull = convexHull(points)
+        guard hull.count >= 3 else { return [] }
+        let maxVertices = Int(B2_MAX_POLYGON_VERTICES)
+        var pieces = [[Vector2]]()
+        if hull.count <= maxVertices {
+            pieces = [hull]
+        } else {
+            // Fan from the first vertex into convex pieces sharing it.
+            var start = 1
+            while start < hull.count - 1 {
+                let end = min(start + maxVertices - 2, hull.count - 1)
+                pieces.append([hull[0]] + hull[start ... end])
+                start = end
+            }
+        }
+        return pieces.compactMap { piece in
+            var points = piece.map(b2Vec2.init)
+            var b2hull = b2ComputeHull(&points, Int32(points.count))
+            guard b2hull.count >= 3 else { return nil }
+            return b2MakePolygon(&b2hull, 0)
         }
     }
 }
@@ -186,19 +168,15 @@ func convexHull(_ points: [Vector2]) -> [Vector2] {
         unique.append(point)
     }
     guard unique.count > 2 else { return unique }
-    var lower = [Vector2]()
-    for p in unique {
-        while lower.count >= 2, cross(lower[lower.count - 1] - lower[lower.count - 2], p - lower[lower.count - 2]) <= 0 {
-            lower.removeLast()
+    func half(_ input: [Vector2]) -> [Vector2] {
+        var chain = [Vector2]()
+        for p in input {
+            while chain.count >= 2, cross(chain[chain.count - 1] - chain[chain.count - 2], p - chain[chain.count - 2]) <= 0 {
+                chain.removeLast()
+            }
+            chain.append(p)
         }
-        lower.append(p)
+        return chain
     }
-    var upper = [Vector2]()
-    for p in unique.reversed() {
-        while upper.count >= 2, cross(upper[upper.count - 1] - upper[upper.count - 2], p - upper[upper.count - 2]) <= 0 {
-            upper.removeLast()
-        }
-        upper.append(p)
-    }
-    return Array(lower.dropLast() + upper.dropLast())
+    return Array(half(unique).dropLast() + half(unique.reversed()).dropLast())
 }
