@@ -45,8 +45,55 @@ import SpritePhysics
         #expect(circle.position == stopped)
     }
 
-    private func mutated(_ className: String, changes: [String: Any]) throws -> Data {
-        let data = try Data(contentsOf: Fixtures.url("SceneArchives/physics.xml"))
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresCompoundPhysics(format: String) throws {
+        let archive = try SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/compound-physics." + format)))
+        let scene = try #require(archive.makeNode() as? Scene)
+        let body = try #require(scene.children.first?.physicsBody)
+        guard case let .compound(shapes) = body.shape else {
+            Issue.record("Expected compound body")
+            return
+        }
+        #expect(shapes.count == 2)
+        #expect(shapes[0] == .circle(radius: 12, center: [2, 3]))
+        guard case let .polygon(points) = shapes[1] else {
+            Issue.record("Expected polygon component")
+            return
+        }
+        let expected: [Vector2] = [[25, -5], [55, -5], [55, 15], [25, 15]]
+        #expect(points.count == expected.count)
+        for (point, target) in zip(points, expected) {
+            #expect(abs(point.x - target.x) < 0.00001 && abs(point.y - target.y) < 0.00001)
+        }
+        #expect(abs(body.mass - 2) < 0.00001)
+        scene.advance(by: .seconds(1.0 / 60))
+        #expect(scene.physicsWorld.rayCast(from: [2, 30], to: [2, -30])?.body === body)
+        #expect(scene.physicsWorld.rayCast(from: [40, 30], to: [40, -30])?.body === body)
+        #expect(scene.physicsWorld.rayCast(from: [20, 30], to: [20, -30]) == nil)
+        for _ in 0..<59 { scene.advance(by: .seconds(1.0 / 60)) }
+        #expect(abs(scene.children[0].position.x - 10) < 0.01)
+        let other = try archive.makeNode()
+        #expect(other.children[0].physicsBody !== body)
+        #expect(other.children[0].position == .zero)
+    }
+
+    @Test func rejectsMalformedCompoundPhysics() throws {
+        for changes: [String: Any] in [
+            ["_compoundBodyCount": 0], ["_compoundBodyCount": -1],
+            ["_compoundBodyCount": 1.5], ["_compoundBodyCount": 257],
+            ["_compoundBodyCount": 1], ["_compoundBodyCount": 3],
+            ["$0": "edge"], ["$1": "{0, 0}"], ["$1": "{12, 1}"],
+            ["$2": "{1000001, 0}"], ["$4": ["TestUID": 99999]],
+            ["$4": ["TestUID": 0]], ["$5": "unexpected"]
+        ] {
+            let data = try mutated("PKPhysicsBody", changes: changes, fixture: "compound-physics")
+            #expect(throws: SceneArchiveError.self) { try SpriteKitSceneArchive.decode(data) }
+        }
+    }
+
+    private func mutated(_ className: String, changes: [String: Any], fixture: String = "physics") throws -> Data {
+        let data = try Data(contentsOf: Fixtures.url("SceneArchives/" + fixture + ".xml"))
         // Use XML UID dictionaries so tests can change object fields without private UID APIs.
         let text = String(decoding: data, as: UTF8.self).replacingOccurrences(of: "CF$UID", with: "TestUID")
         var plist = try #require(PropertyListSerialization.propertyList(from: Data(text.utf8), format: nil) as? [String: Any])
