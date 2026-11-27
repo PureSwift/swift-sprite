@@ -277,6 +277,39 @@ import SpriteGraph
         #expect(scene.children.allSatisfy { !$0.hasActions })
     }
 
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresSpriteResizeActions(format: String) throws {
+        let scene = try #require(SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/resize-actions." + format))).makeNode() as? Scene)
+        let sprites = scene.children.compactMap { $0 as? Sprite }
+        #expect(sprites.count == 6)
+        scene.advance(by: .seconds(1))
+        #expect(sprites.map(\.size) == [[30, 45], [30, 30], [20, 45], [30, 45], [25, 25], [30, 25]])
+        sprites[1].size.y = 90
+        sprites[2].size.x = 80
+        scene.advance(by: .seconds(1))
+        #expect(sprites.map(\.size) == [[40, 60], [40, 90], [80, 60], [40, 60], [30, 20], [40, 20]])
+        #expect(sprites.allSatisfy { !$0.hasActions })
+    }
+
+    @Test func rejectsMalformedResizeActions() throws {
+        let valid: [String: PropertyValue] = [
+            "_useW": .bool(true), "_useH": .bool(true),
+            "_sizeTarget.width": .number(40), "_sizeTarget.height": .number(60)
+        ]
+        for change: [String: PropertyValue] in [
+            ["_useW": .bool(false), "_useH": .bool(false)],
+            ["_useW": .string("yes")], ["_sizeTarget.width": .null],
+            ["_sizeTarget.height": .number(.nan)], ["_sizeTarget.width": .number(.infinity)],
+            ["_sizeResidual.width": .number(1)], ["_sizeResidual.height": .number(1)]
+        ] {
+            let (graph, node) = try archive(actionFields: valid.merging(change) { _, new in new },
+                className: "SKResize")
+            var decoder = ArchiveActionDecoder(graph: graph)
+            #expect(throws: SceneArchiveError.self) { try decoder.actions(node) }
+        }
+    }
+
     @Test func rejectsInvalidScaleActions() throws {
         for fields: [String: PropertyValue] in [
             ["_useX": .bool(false), "_useY": .bool(false)],
