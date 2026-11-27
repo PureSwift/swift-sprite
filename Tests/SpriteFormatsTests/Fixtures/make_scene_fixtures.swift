@@ -384,3 +384,20 @@ for (name, root): (String, Any) in [("sound-actions", soundScene),
             .write(to: directory.appendingPathComponent(name + "." + suffix))
     }
 }
+
+let compoundScene = SKScene(size: CGSize(width: 200, height: 200))
+compoundScene.physicsWorld.gravity = .zero
+let compoundNode = SKNode()
+compoundNode.physicsBody = SKPhysicsBody(bodies: [
+    SKPhysicsBody(circleOfRadius: 12, center: CGPoint(x: 2, y: 3)),
+    SKPhysicsBody(rectangleOf: CGSize(width: 30, height: 20), center: CGPoint(x: 40, y: 5))
+])
+compoundNode.physicsBody?.mass = 2
+compoundNode.physicsBody?.linearDamping = 0
+compoundNode.physicsBody?.velocity = CGVector(dx: 10, dy: 0)
+compoundScene.addChild(compoundNode)
+let compoundArchive = try tilePlist(compoundScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: compoundArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("compound-physics." + suffix))
+}
