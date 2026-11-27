@@ -335,3 +335,12 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: screenArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("screen-blend." + suffix))
 }
+
+let actionLibrary = try tilePlist(["actions": [
+    "Move": SKAction.moveBy(x: 20, y: 10, duration: 1),
+    "Flipbook": SKAction.animate(with: [croppedTile, tileTexture], timePerFrame: 0.25)
+]])
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: actionLibrary, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("action-library." + suffix))
+}
