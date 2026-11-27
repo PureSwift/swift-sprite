@@ -282,7 +282,8 @@ public extension Action {
 
     /// Starts an independent action on the first match for a child path.
     /// A leading slash starts at the tree root. Other paths start at the receiving node.
-    /// Each component is an exact name; recursive and wildcard searches are unsupported.
+    /// Components are exact names, `.` (current node), or `..` (parent).
+    /// Recursive and wildcard searches are unsupported.
     /// Lookup happens at playback time. A missing child is a no-op.
     /// This action completes immediately without waiting for the child's action.
     static func run(_ action: Action, onChildWithName name: String) -> Action {
@@ -290,15 +291,21 @@ public extension Action {
         let path = fromRoot ? String(name.dropFirst()) : name
         let components = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
         return .run { node in
-            guard components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else { return }
+            guard components.allSatisfy({ !$0.isEmpty }) else { return }
             var start = node
             if fromRoot {
                 while let parent = start.parent { start = parent }
             }
             var candidates = [start]
             for component in components {
-                candidates = candidates.flatMap { parent in
-                    parent.children.filter { $0.name == component }
+                if component == "." { continue }
+                if component == ".." {
+                    var seen = Set<ObjectIdentifier>()
+                    candidates = candidates.compactMap(\.parent).filter { seen.insert(ObjectIdentifier($0)).inserted }
+                } else {
+                    candidates = candidates.flatMap { parent in
+                        parent.children.filter { $0.name == component }
+                    }
                 }
                 if candidates.isEmpty { return }
             }
