@@ -181,8 +181,19 @@ Compound bodies support archived circles and convex polygon components, includin
 local offsets; polygon components are converted from meters to points. Loading is limited
 to 256 components and 4,096 polygon vertices per compound body.
 
-Edge segments, chains, and loops load as static, two-sided collision boundaries, even\nwhen the archive's dynamic flag is set. Edge paths support up to 1,025 straight-line\npoints and may be concave; zero-length segments are rejected. Loops connect the final\npoint to the first, while chains preserve their archived endpoints.\n\nUnsupported texture-derived geometry, curved paths, nonconvex volume polygons, joints, pinned bodies,
-precise collision detection, charged bodies, and physics bodies under scaled nodes are
+Edge segments, chains, and loops load as static, two-sided collision boundaries, even
+when the archive's dynamic flag is set. Edge paths support up to 1,025 straight-line
+points and may be concave; zero-length segments are rejected. Loops connect the final
+point to the first, while chains preserve their archived endpoints.
+
+The archived precise-collision flag maps to `PhysicsBody.usesContinuousCollisionDetection`.
+This enables Box2D bullet sweeps against non-bullet dynamic bodies and can be changed
+while a body is in a world. Static collisions already use continuous detection; sensors
+and bullet-to-bullet pairs are excluded. This reduces tunneling without guaranteeing
+SpriteKit's collision timing or preventing every missed collision.
+
+Unsupported texture-derived geometry, curved paths, nonconvex volume polygons, joints, pinned bodies,
+charged bodies, and physics bodies under scaled nodes are
 currently rejected. Field masks and internal collision skin radii are not imported;
 field nodes are unsupported and the engine uses its own collision geometry. Physics
 fixtures cover binary/XML decoding and simulation without requiring SpriteKit at test time.
