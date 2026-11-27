@@ -500,3 +500,22 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: axisScaleArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("axis-scale-actions." + suffix))
 }
+
+let resizeScene = SKScene(size: CGSize(width: 200, height: 100))
+for action in [
+    SKAction.resize(toWidth: 40, height: 60, duration: 2),
+    SKAction.resize(toWidth: 40, duration: 2),
+    SKAction.resize(toHeight: 60, duration: 2),
+    SKAction.group([SKAction.resize(toWidth: 40, duration: 2), SKAction.resize(toHeight: 60, duration: 2)]),
+    SKAction.resize(byWidth: 10, height: -10, duration: 2),
+    SKAction.repeat(SKAction.resize(byWidth: 10, height: -5, duration: 1), count: 2)
+] {
+    let sprite = SKSpriteNode(color: .blue, size: CGSize(width: 20, height: 30))
+    sprite.run(action, withKey: "resize")
+    resizeScene.addChild(sprite)
+}
+let resizeArchive = try tilePlist(resizeScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: resizeArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("resize-actions." + suffix))
+}
