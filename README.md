@@ -167,15 +167,21 @@ fixtures cover binary/XML decoding and simulation without requiring SpriteKit at
 
 Archived actions support relative/absolute movement (including single-axis movement),
 Z rotation, two-axis scaling, fading, waits, hide/unhide, removal, sequences, groups,
-finite repeats, and repeat-forever. The ordered action list and keys are restored without
+finite repeats, repeat-forever, and `SKAnimate` texture flipbooks. The ordered action list and keys are restored without
 duplicating keyed actions. Each `makeNode()` creates independent playback state, and
 standard timing modes use the engine's easing curves.
 
 Actions start from their archived descriptions. Reversed actions, detectable partially
-executed state, retimed composites, single-axis/size-based scaling, texture/color/resize
+executed state, retimed composites/flipbooks, single-axis/size-based scaling, color/resize
 animations, paths, sounds, callbacks, and custom classes are unsupported. Native fixtures
 do not encode action speed; omitted runtime state cannot be recovered. Node speed and
 pause settings still apply. This is not a snapshot/resume mechanism for running games.
+
+Texture flipbooks resolve every frame through the scene texture resolver and shared
+cache, including atlas subrects. They support uniform frame timing, optional resizing,
+and restoration on normal completion. Restoration when an action is cancelled is not
+yet supported. Editor archives may save scenes and sprites paused; unpause the desired
+nodes explicitly to start playback.
 
 Particle emitters restore birth rate/count, lifetime, spawn position/range, speed and
 emission angle, acceleration, rotation, scale, opacity, color/blend factor, size, blend
@@ -186,6 +192,9 @@ support linear interpolation with clamping. Standalone emitter archives are supp
 Linear, clamped color keyframes support archived `NSColor` RGB and grayscale values,
 including alpha. The importer uses the stored RGB/white fallback directly; custom ICC
 profiles are not color-managed. Other color classes and color spaces are unsupported.
+
+A zero archived particle size uses the resolved texture dimensions, including atlas
+subrects. Explicit sizes are preserved; zero size without a texture stays invisible.
 
 Starting color-blend variance is supported: each particle samples the base factor
 plus a random offset within half the range, then clamps it to `0...1`. The sampled
