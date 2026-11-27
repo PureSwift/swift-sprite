@@ -717,3 +717,22 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: recursivePathArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("recursive-path-actions." + suffix))
 }
+
+let embeddedSearchScene = SKScene(size: CGSize(width: 100, height: 100))
+let unrelatedTarget = SKNode()
+unrelatedTarget.name = "target"
+embeddedSearchScene.addChild(unrelatedTarget)
+let searchContainer = SKNode()
+searchContainer.name = "container"
+let searchWrapper = SKNode()
+let searchTarget = SKNode()
+searchTarget.name = "target"
+searchWrapper.addChild(searchTarget)
+searchContainer.addChild(searchWrapper)
+embeddedSearchScene.addChild(searchContainer)
+embeddedSearchScene.run(.run(.moveBy(x: 10, y: 0, duration: 1), onChildWithName: "container//target"))
+let embeddedSearchArchive = try tilePlist(embeddedSearchScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: embeddedSearchArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("embedded-search-actions." + suffix))
+}
