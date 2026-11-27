@@ -220,7 +220,7 @@ fixtures cover binary/XML decoding and simulation without requiring SpriteKit at
 Archived actions support relative/absolute movement (including single-axis movement),
 color-and-blend or blend-only colorization,
 Z rotation, two-axis scaling, single-axis absolute scaling, scaling sprites to a display size, absolute/relative sprite resizing (including independent width/height targets), fading, waits, hide/unhide, removal, sequences, groups,
-finite repeats, repeat-forever, `SKAnimate` texture flipbooks, and `SKPlaySound` callbacks. The ordered action list and keys are restored without
+finite repeats, repeat-forever, `SKAnimate` texture flipbooks and instantaneous texture replacement, and `SKPlaySound` callbacks. The ordered action list and keys are restored without
 duplicating keyed actions. Each `makeNode()` creates independent playback state, and
 standard timing modes use the engine's easing curves. Size-based scaling resolves the
 sprite's base size when playback starts; zero-sized dimensions retain their scale,
@@ -236,6 +236,9 @@ Texture flipbooks resolve every frame through the scene texture resolver and sha
 cache, including atlas subrects. They support uniform frame timing, optional resizing,
 and restoration on completion or cancellation, including keyed replacement and nested
 actions. Only animations that have started and are still active restore their texture.
+Instantaneous texture replacements honor the archived resize flag. The fixture SDK
+archives `setTexture` with resizing enabled even when requested otherwise; the
+original caller intention cannot be recovered from those archives.
 Editor archives may save scenes and sprites paused; unpause the desired
 nodes explicitly to start playback.
 
@@ -383,7 +386,7 @@ sound once and preserves archived action waits without loading audio files. With
 `--mute`, sound actions still fail with a missing-sound error.
 
 The script uses SDL's dummy video driver and software renderer, requires clean exits
-and completed frames for successful loads, and treats timeouts as failures. Its 27
+and completed frames for successful loads, and treats timeouts as failures. Its 28
 checks cover custom classes, references, muted sound actions, source/compiled atlases, physics fixtures,
 and invalid options or resources. Temporary derived archives stay outside the repository.
 The `Viewer smoke tests` workflow builds the viewer, runs the full Swift test suite,
