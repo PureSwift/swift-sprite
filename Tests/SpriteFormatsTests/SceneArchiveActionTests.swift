@@ -39,6 +39,12 @@ import SpriteGraph
             Texture(id: TextureID(rawValue: 4), textureSize: [80, 40])
         }) as? Scene)
         #expect((fresh.children.first as? Sprite)?.size == [12, 8])
+        let cancelled = try #require(fresh.children.first { $0.name == "restore" } as? Sprite)
+        fresh.advance(by: .milliseconds(375))
+        #expect(cancelled.texture?.size == [40, 40])
+        cancelled.removeAction(forKey: "flipbook")
+        #expect(cancelled.texture?.size == [20, 40] && cancelled.size == [20, 40])
+        #expect(!cancelled.hasActions)
     }
 
     @Test func rejectsMalformedTextureAnimations() throws {
