@@ -84,6 +84,7 @@ indirect enum ArchiveAction: Sendable {
     case animation([ArchiveTexture], Duration, resize: Bool, restore: Bool)
     case setTexture(ArchiveTexture, resize: Bool)
     case sound(String, Duration)
+    case runOnChild(ArchiveAction, String)
     case sequence([ArchiveAction])
     case group([ArchiveAction])
     case repeated(ArchiveAction, count: Int?)
@@ -93,6 +94,8 @@ indirect enum ArchiveAction: Sendable {
         sound: (String) throws -> Action.Block) throws -> Action {
         switch self {
         case let .ready(action): return action
+        case let .runOnChild(child, name):
+            return .run(try child.makeAction(texture: texture, sound: sound), onChildWithName: name)
         case let .sound(name, duration):
             return .sequence([.run(try sound(name)), .wait(for: duration)])
         case let .setTexture(frame, resize): return .setTexture(try texture(frame), resize: resize)
@@ -112,7 +115,7 @@ indirect enum ArchiveAction: Sendable {
         switch self {
         case let .ready(action): return action
         case let .sound(_, duration): return .wait(for: duration)
-        case .setTexture: return .wait(for: .zero)
+        case .setTexture, .runOnChild: return .wait(for: .zero)
         case let .animation(frames, time, _, _): return .wait(for: time * frames.count)
         case let .sequence(children): return .sequence(children.map(\.timingAction))
         case let .group(children): return .group(children.map(\.timingAction))
@@ -304,6 +307,20 @@ struct ArchiveActionDecoder {
             }
             action = try flag("_isRelative") ? .changeSpeed(by: target, duration: duration)
                 : .changeSpeed(to: target, duration: duration)
+        case "SKRunAction":
+            guard seconds == 0, try flag("_runOnSubSprite"), try !flag("_waitForKeyedAction"),
+                  try graph.isNull(fields["_actionKey"]) else {
+                throw SceneArchiveError.unsupported("Retimed, keyed, or non-child run action")
+            }
+            guard let childName = try graph.string(fields["_subSpriteKey"]), !childName.isEmpty,
+                  !childName.contains(where: { "/.*[]".contains($0) }) else {
+                throw SceneArchiveError.unsupported("Child action requires a direct literal name")
+            }
+            guard let child = fields["_action"] else {
+                throw SceneArchiveError.invalid("Missing child action")
+            }
+            deferred = .runOnChild(try decode(child), childName)
+            action = .wait(for: .zero)
         case "SKWait": action = .wait(for: duration)
         case "SKHide", "SKRemove":
             guard seconds == 0 else { throw SceneArchiveError.unsupported("Retimed instantaneous action") }
