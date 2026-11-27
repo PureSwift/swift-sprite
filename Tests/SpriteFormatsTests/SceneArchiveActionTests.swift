@@ -443,6 +443,42 @@ import SpriteGraph
         }
     }
 
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresReversedRelativeActions(format: String) throws {
+        let archive = try SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/reversed-actions." + format)))
+        let scene = try #require(archive.makeNode() as? Scene)
+        let sprites = scene.children.compactMap { $0 as? Sprite }
+        #expect(sprites.count == 3)
+        scene.advance(by: .seconds(1))
+        #expect(sprites[0].position == [0, 17])
+        #expect(sprites[1].zRotation == 0)
+        #expect(sprites[2].size == [15, 35])
+        scene.advance(by: .seconds(1))
+        #expect(sprites[0].position == [-5, 27])
+        #expect(sprites[1].zRotation == -0.5)
+        #expect(sprites[2].size == [10, 40])
+        scene.advance(by: .seconds(2))
+        #expect(sprites.allSatisfy { $0.position == [5, 7] && $0.zRotation == 0.5 && $0.size == [20, 30] })
+        #expect(sprites.allSatisfy { !$0.hasActions })
+        let independent = try #require(archive.makeNode() as? Scene)
+        #expect(independent.children.allSatisfy { $0.position == [5, 7] && $0.hasActions })
+    }
+
+    @Test func rejectsUnsupportedOrPartiallyExecutedReversedActions() throws {
+        for name in ["SKMove", "SKRotate", "SKResize"] {
+            for changes: [String: PropertyValue] in [
+                ["_isRelative": .bool(false)], ["_lastRatio": .number(0.5)],
+                ["_hasFired": .bool(true)], ["_finished": .bool(true)]
+            ] {
+                let fields: [String: PropertyValue] = ["_isReversed": .bool(true), "_isRelative": .bool(true)]
+                let (graph, node) = try archive(actionFields: fields.merging(changes) { _, new in new }, className: name)
+                var decoder = ArchiveActionDecoder(graph: graph)
+                #expect(throws: SceneArchiveError.self) { try decoder.actions(node) }
+            }
+        }
+    }
+
     @Test func rejectsInvalidScaleActions() throws {
         for fields: [String: PropertyValue] in [
             ["_useX": .bool(false), "_useY": .bool(false)],
