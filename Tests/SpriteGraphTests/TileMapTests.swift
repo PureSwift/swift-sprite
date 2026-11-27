@@ -5,6 +5,77 @@ import SpriteCore
 @MainActor @Suite struct TileMapTests {
     let texture = Texture(id: TextureID(rawValue: 1), textureSize: [20, 10])
 
+    @Test func validatesAnimation() {
+        #expect(TileAnimation(textures: [], timePerFrame: .seconds(1)) == nil)
+        #expect(TileAnimation(textures: [texture], timePerFrame: .zero) == nil)
+        #expect(TileAnimation(textures: [texture], timePerFrame: .seconds(-1)) == nil)
+    }
+
+    @Test func animationLoopsWithoutRebuildingGeometry() throws {
+        let second = Texture(id: TextureID(rawValue: 2), textureSize: [20, 10])
+            .subtexture(inUnitRect: Rect(x: 0.5, y: 0, width: 0.5, height: 1))
+        let animation = try #require(TileAnimation(textures: [texture, second], timePerFrame: .milliseconds(250)))
+        let set = TileSet(textures: [2: texture], animations: [1: animation])
+        let map = TileMap(tileSet: set, columns: 3, rows: 1, tileSize: [20, 10])
+        map[0, 0] = Tile(id: 1)
+        map[1, 0] = Tile(id: 1)
+        map[2, 0] = Tile(id: 2)
+        func frame(_ node: TileMap) -> SpriteFrame {
+            var context = RenderContext()
+            node.draw(in: &context)
+            return context.batcher.makeFrame()
+        }
+        let initial = frame(map)
+        map.evaluateActions(seconds: 0.125)
+        #expect(frame(map).vertices == initial.vertices)
+        map.evaluateActions(seconds: 0.125)
+        let changed = frame(map)
+        #expect(changed.batches.map(\.texture) == [second.id, texture.id])
+        #expect(changed.vertices.map(\.position) == initial.vertices.map(\.position))
+        #expect(changed.vertices[0].texCoord.x == 0.5)
+        #expect(changed.vertices[4].texCoord.x == 0.5)
+        #expect(changed.vertices[8].texCoord.x == 0)
+        map[1, 0] = nil
+        #expect(frame(map).vertices.count == 8)
+        map[1, 0] = Tile(id: 1)
+        #expect(frame(map).vertices == changed.vertices)
+        let fresh = TileMap(tileSet: set, columns: 1, rows: 1, tileSize: [20, 10])
+        fresh[0, 0] = Tile(id: 1)
+        #expect(frame(fresh).batches.first?.texture == texture.id)
+        map.evaluateActions(seconds: 1000.25)
+        #expect(frame(map).vertices == initial.vertices)
+    }
+
+    @Test func animationInheritsPauseAndSpeed() throws {
+        let second = Texture(id: TextureID(rawValue: 2), textureSize: [20, 10])
+        let animation = try #require(TileAnimation(textures: [texture, second], timePerFrame: .seconds(1)))
+        let map = TileMap(tileSet: TileSet(textures: [:], animations: [1: animation]),
+            columns: 1, rows: 1, tileSize: [20, 10])
+        map[0, 0] = Tile(id: 1)
+        let parent = Node()
+        let scene = Scene(size: [100, 100])
+        scene.addChild(parent)
+        parent.addChild(map)
+        func displayed() -> TextureID? { scene.makeFrame(viewportSize: [100, 100]).batches.first?.texture }
+        scene.speed = 2
+        parent.speed = 2
+        map.speed = 0.5
+        scene.advance(by: .milliseconds(500))
+        #expect(displayed() == second.id)
+        for node in [scene as Node, parent, map] {
+            node.isPaused = true
+            scene.advance(by: .milliseconds(500))
+            #expect(displayed() == second.id)
+            node.isPaused = false
+        }
+        map.speed = 0
+        scene.advance(by: .seconds(1))
+        #expect(displayed() == second.id)
+        map.speed = 0.5
+        scene.advance(by: .milliseconds(500))
+        #expect(displayed() == texture.id)
+    }
+
     @Test func coordinatesAndBounds() {
         let map = TileMap(tileSet: TileSet(textures: [1: texture]), columns: 2, rows: 3, tileSize: [20, 10])
         map.anchorPoint = [0.5, 0.5]
