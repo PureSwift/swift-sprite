@@ -556,3 +556,20 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: setTextureArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("set-texture-actions." + suffix))
 }
+
+let speedScene = SKScene(size: CGSize(width: 100, height: 100))
+for (initialSpeed, action) in [
+    (CGFloat(1), SKAction.speed(to: 2, duration: 2)),
+    (CGFloat(2), SKAction.speed(by: 0.5, duration: 2)),
+    (CGFloat(1), SKAction.speed(to: 0, duration: 0))
+] {
+    let node = SKNode()
+    node.speed = initialSpeed
+    node.run(action, withKey: "speed")
+    speedScene.addChild(node)
+}
+let speedArchive = try tilePlist(speedScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: speedArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("speed-actions." + suffix))
+}
