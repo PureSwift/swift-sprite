@@ -410,6 +410,39 @@ import SpriteGraph
         }
     }
 
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresNodeSpeedActions(format: String) throws {
+        let scene = try #require(SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/speed-actions." + format))).makeNode() as? Scene)
+        // This SDK omits node speed from the archive; relative actions capture runtime speed.
+        #expect(scene.children.map(\.speed) == [1, 1, 1])
+        scene.children[1].speed = 2
+        scene.isPaused = true
+        scene.advance(by: .seconds(1))
+        #expect(scene.children.map(\.speed) == [1, 2, 1])
+        scene.isPaused = false
+        scene.advance(by: .milliseconds(500))
+        #expect(scene.children.map(\.speed) == [1.25, 1.5, 0])
+        scene.advance(by: .milliseconds(500))
+        #expect(scene.children.map(\.speed) == [1.5625, 1.125, 0])
+        scene.advance(by: .seconds(3))
+        #expect(scene.children.map(\.speed) == [2, 1, 0])
+        #expect(scene.children.allSatisfy { !$0.hasActions })
+    }
+
+    @Test func rejectsMalformedSpeedActions() throws {
+        for fields: [String: PropertyValue] in [
+            [:], ["_speedTarget": .number(-1)], ["_speedTarget": .number(.infinity)],
+            ["_speedTarget": .number(.nan)], ["_speedTarget": .string("fast")],
+            ["_speedTarget": .number(2), "_isRelative": .string("yes")],
+            ["_speedTarget": .number(2), "_deltaSpeed": .number(0.5)]
+        ] {
+            let (graph, node) = try archive(actionFields: fields, className: "SKSpeed")
+            var decoder = ArchiveActionDecoder(graph: graph)
+            #expect(throws: SceneArchiveError.self) { try decoder.actions(node) }
+        }
+    }
+
     @Test func rejectsInvalidScaleActions() throws {
         for fields: [String: PropertyValue] in [
             ["_useX": .bool(false), "_useY": .bool(false)],
