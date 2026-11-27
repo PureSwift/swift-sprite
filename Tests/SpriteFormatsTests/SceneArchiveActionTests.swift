@@ -515,6 +515,45 @@ import SpriteGraph
         }
     }
 
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresReversedRelativeSpeed(format: String) throws {
+        let archive = try SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/reversed-speed-actions." + format)))
+        let scene = try #require(archive.makeNode() as? Scene)
+        #expect(scene.children.count == 2)
+        for node in scene.children { node.speed = 2 }
+        scene.isPaused = true
+        scene.advance(by: .seconds(1))
+        #expect(scene.children.map(\.speed) == [2, 2])
+        scene.isPaused = false
+        scene.advance(by: .milliseconds(500))
+        #expect(scene.children.map(\.speed) == [1, 1.5])
+        #expect(!scene.children[0].hasActions && scene.children[1].hasActions)
+        scene.advance(by: .milliseconds(500))
+        #expect(scene.children.map(\.speed) == [1, 1.125])
+        scene.advance(by: .seconds(1))
+        #expect(scene.children.map(\.speed) == [1, 1])
+        #expect(scene.children.allSatisfy { !$0.hasActions })
+        let fresh = try #require(archive.makeNode() as? Scene)
+        #expect(fresh.children.allSatisfy { $0.speed == 1 && $0.hasActions })
+    }
+
+    @Test func rejectsMalformedReversedSpeed() throws {
+        let valid: [String: PropertyValue] = [
+            "_isReversed": .bool(true), "_isRelative": .bool(true), "_speedTarget": .number(0.5)
+        ]
+        for changes: [String: PropertyValue] in [
+            ["_isRelative": .bool(false)], ["_speedTarget": .null],
+            ["_speedTarget": .number(.infinity)], ["_speedTarget": .number(-1)],
+            ["_deltaSpeed": .number(1)], ["_lastRatio": .number(0.5)]
+        ] {
+            let (graph, node) = try archive(actionFields: valid.merging(changes) { _, new in new },
+                className: "SKSpeed")
+            var decoder = ArchiveActionDecoder(graph: graph)
+            #expect(throws: SceneArchiveError.self) { try decoder.actions(node) }
+        }
+    }
+
     @Test func rejectsInvalidScaleActions() throws {
         for fields: [String: PropertyValue] in [
             ["_useX": .bool(false), "_useY": .bool(false)],
