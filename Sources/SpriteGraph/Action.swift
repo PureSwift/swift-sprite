@@ -280,15 +280,22 @@ public extension Action {
         return Action(.wait, seconds: duration.seconds + jitter)
     }
 
-    /// Starts an independent action on the first match for a relative child path.
-    /// Each slash-separated component is an exact name; search expressions are unsupported.
+    /// Starts an independent action on the first match for a child path.
+    /// A leading slash starts at the tree root. Other paths start at the receiving node.
+    /// Each component is an exact name; recursive and wildcard searches are unsupported.
     /// Lookup happens at playback time. A missing child is a no-op.
     /// This action completes immediately without waiting for the child's action.
     static func run(_ action: Action, onChildWithName name: String) -> Action {
-        let components = name.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        let fromRoot = name.hasPrefix("/")
+        let path = fromRoot ? String(name.dropFirst()) : name
+        let components = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
         return .run { node in
             guard components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else { return }
-            var candidates = [node]
+            var start = node
+            if fromRoot {
+                while let parent = start.parent { start = parent }
+            }
+            var candidates = [start]
             for component in components {
                 candidates = candidates.flatMap { parent in
                     parent.children.filter { $0.name == component }
