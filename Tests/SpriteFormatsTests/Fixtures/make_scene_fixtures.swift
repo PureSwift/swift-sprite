@@ -290,3 +290,32 @@ colorEmitter.particleColorBlendFactorRange = 1
 let blendArchive = try tilePlist(colorEmitter)
 try PropertyListSerialization.data(fromPropertyList: blendArchive, format: .binary, options: 0)
     .write(to: directory.appendingPathComponent("emitter-blend.sks"))
+
+let textureSizedEmitter = SKEmitterNode()
+textureSizedEmitter.particleTexture = tileTexture
+textureSizedEmitter.particleBirthRate = 1
+textureSizedEmitter.numParticlesToEmit = 1
+textureSizedEmitter.particleLifetime = 10
+let textureSizedArchive = try tilePlist(textureSizedEmitter)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: textureSizedArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("emitter-texture-size." + suffix))
+}
+
+let animationScene = SKScene(size: CGSize(width: 100, height: 100))
+for (name, restore) in [("once", false), ("restore", true), ("loop", false), ("fixed", false)] {
+    let originalTexture = SKTexture(rect: CGRect(x: 0, y: 0, width: 0.25, height: 1), in: tileTexture)
+    let sprite = SKSpriteNode(texture: originalTexture, size: CGSize(width: 12, height: 8))
+    sprite.name = name
+    let flipbook = SKAction.animate(with: [croppedTile, tileTexture], timePerFrame: 0.25,
+        resize: name != "fixed", restore: restore)
+    let action = name == "loop" ? SKAction.repeatForever(SKAction.group([flipbook]))
+        : SKAction.sequence([SKAction.wait(forDuration: 0.25), flipbook])
+    sprite.run(action, withKey: "flipbook")
+    animationScene.addChild(sprite)
+}
+let animationArchive = try tilePlist(animationScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: animationArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("texture-actions." + suffix))
+}
