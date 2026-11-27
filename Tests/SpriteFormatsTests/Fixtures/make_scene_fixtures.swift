@@ -483,3 +483,20 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: colorActionArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("color-actions." + suffix))
 }
+let axisScaleScene = SKScene(size: CGSize(width: 200, height: 100))
+for action in [
+    SKAction.scaleX(to: 4, duration: 2),
+    SKAction.scaleY(to: -2, duration: 2),
+    SKAction.group([SKAction.scaleX(to: 4, duration: 2), SKAction.scaleY(to: -2, duration: 2)])
+] {
+    let node = SKNode()
+    node.xScale = 2
+    node.yScale = 3
+    node.run(action, withKey: "scale")
+    axisScaleScene.addChild(node)
+}
+let axisScaleArchive = try tilePlist(axisScaleScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: axisScaleArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("axis-scale-actions." + suffix))
+}
