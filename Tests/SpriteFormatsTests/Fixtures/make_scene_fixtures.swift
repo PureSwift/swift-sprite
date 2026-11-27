@@ -269,3 +269,19 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: animatedArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("tiles-animated." + suffix))
 }
+
+let colorEmitter = SKEmitterNode()
+colorEmitter.particleBirthRate = 1
+colorEmitter.particleLifetime = 2
+colorEmitter.numParticlesToEmit = 1
+colorEmitter.particleSize = CGSize(width: 8, height: 8)
+colorEmitter.particleColorBlendFactor = 1
+colorEmitter.particleColorSequence = SKKeyframeSequence(keyframeValues: [
+    NSColor(calibratedRed: 1, green: 0, blue: 0, alpha: 1),
+    NSColor(calibratedWhite: 0.5, alpha: 0.5)
+], times: [0, 1])
+let colorArchive = try tilePlist(colorEmitter)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: colorArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("emitter-colors." + suffix))
+}
