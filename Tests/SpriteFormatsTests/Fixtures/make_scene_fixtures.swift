@@ -148,3 +148,54 @@ try actionData.write(to: directory.appendingPathComponent("actions.sks"))
 let actionPlist = try PropertyListSerialization.propertyList(from: actionData, options: [], format: nil)
 try PropertyListSerialization.data(fromPropertyList: actionPlist, format: .xml, options: 0)
     .write(to: directory.appendingPathComponent("actions.xml"))
+
+
+let emitterScene = SKScene(size: CGSize(width: 320, height: 240))
+let emitter = SKEmitterNode()
+emitter.name = "emitter"
+emitter.position = CGPoint(x: 20, y: 30)
+emitter.particleTexture = SKTexture(imageNamed: imagePath)
+emitter.particleBirthRate = 8
+emitter.numParticlesToEmit = 12
+emitter.particleLifetime = 4
+emitter.particlePosition = CGPoint(x: 3, y: 4)
+emitter.particlePositionRange = CGVector(dx: 10, dy: 20)
+emitter.particleSpeed = 30
+emitter.particleSpeedRange = 4
+emitter.emissionAngle = 0.5
+emitter.emissionAngleRange = 0.2
+emitter.xAcceleration = 2
+emitter.yAcceleration = -3
+emitter.particleRotation = 0.3
+emitter.particleRotationRange = 0.1
+emitter.particleRotationSpeed = 0.4
+emitter.particleColor = NSColor(srgbRed: 0.2, green: 0.4, blue: 0.6, alpha: 0.8)
+emitter.particleColorBlendFactor = 0.5
+emitter.particleAlpha = 0.7
+emitter.particleAlphaRange = 0.2
+emitter.particleAlphaSpeed = -0.1
+emitter.particleScale = 1.5
+emitter.particleScaleRange = 0.5
+emitter.particleScaleSpeed = -0.2
+emitter.particleSize = CGSize(width: 10, height: 12)
+emitter.particleZPosition = 2
+emitter.particleBlendMode = .add
+emitter.particleAlphaSequence = SKKeyframeSequence(keyframeValues: [1.0, 0.0], times: [0.0, 1.0])
+emitter.particleScaleSequence = SKKeyframeSequence(keyframeValues: [1.0, 2.0], times: [0.0, 1.0])
+emitter.targetNode = emitterScene
+emitterScene.addChild(emitter)
+let secondEmitter = SKEmitterNode()
+secondEmitter.name = "second"
+secondEmitter.particleTexture = emitter.particleTexture
+emitterScene.addChild(secondEmitter)
+let emitterData = try NSKeyedArchiver.archivedData(withRootObject: emitterScene, requiringSecureCoding: true)
+guard var emitterPlist = try PropertyListSerialization.propertyList(from: emitterData, format: nil) as? [String: Any],
+      var emitterObjects = emitterPlist["$objects"] as? [Any] else { fatalError("Invalid emitter archive") }
+for index in emitterObjects.indices where (emitterObjects[index] as? String) == imagePath {
+    emitterObjects[index] = "../SpriteKit/sample.atlas/wide.png"
+}
+emitterPlist["$objects"] = emitterObjects
+try PropertyListSerialization.data(fromPropertyList: emitterPlist, format: .binary, options: 0)
+    .write(to: directory.appendingPathComponent("emitters.sks"))
+try PropertyListSerialization.data(fromPropertyList: emitterPlist, format: .xml, options: 0)
+    .write(to: directory.appendingPathComponent("emitters.xml"))
