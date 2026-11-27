@@ -221,6 +221,31 @@ import SpriteCore
         #expect(target.position.x == 2)
     }
 
+    @Test func bracketPatternsValidateAndMatch() throws {
+        for (pattern, name, expected) in [
+            ("enemy[1-3]", "enemy2", true), ("enemy[1-3]", "enemy4", false),
+            ("[a,b]", "b", true), ("[abc]", "c", true), ("[a,b]", ",", false),
+            ("*[0-9]*end", "item42end", true), ("*[0-9]*end", "itemend", false),
+            ("[a-c,x-z]", "y", true), ("[🐱,🐶]", "🐱", true)
+        ] {
+            let compiled = try #require(NodeNamePattern(pattern))
+            #expect(compiled.matches(name) == expected)
+            #expect(!compiled.matches(nil))
+        }
+        for invalid in ["[]", "[", "]", "[z-a]", "[a-]", "[-a]", "[^a]", "[!a]", "[[a]]"] {
+            #expect(NodeNamePattern(invalid) == nil)
+        }
+        let scene = Scene(size: [100, 100])
+        let container = Node(), target = Node()
+        container.name = "group2"
+        target.name = "enemy9"
+        scene.addChild(container)
+        container.addChild(target)
+        scene.run(.run(.move(by: [2, 0], duration: .zero), onChildWithName: "group[1-3]//enemy[0-9]"))
+        scene.advance(by: .milliseconds(1))
+        #expect(target.position.x == 2)
+    }
+
     @Test func relativeResizeComposesAndIgnoresPlainNodes() {
         let scene = Scene(size: [200, 100])
         let sprite = Sprite(color: .white, size: [20, 30])
