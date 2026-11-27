@@ -310,6 +310,38 @@ import SpriteGraph
         }
     }
 
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresSizeBasedScaling(format: String) throws {
+        let scene = try #require(SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/size-scale-actions." + format))).makeNode() as? Scene)
+        let sprites = scene.children.compactMap { $0 as? Sprite }
+        #expect(sprites.count == 2)
+        scene.advance(by: .seconds(1))
+        #expect(sprites.map(\.scale) == [[3, 2], [2, 1]])
+        #expect(sprites.map(\.size) == [[20, 30], [40, 60]])
+        scene.advance(by: .seconds(1))
+        #expect(sprites.map(\.scale) == [[4, 3], [2, 2]])
+        #expect(sprites.map(\.size) == [[20, 30], [40, 60]])
+        #expect(sprites.allSatisfy { !$0.hasActions })
+    }
+
+    @Test func rejectsInvalidSizeBasedScaling() throws {
+        let valid: [String: PropertyValue] = [
+            "_useX": .bool(true), "_useY": .bool(true), "_isTargetSizeBased": .bool(true),
+            "_targetSize": .string("{40, 60}")
+        ]
+        for change: [String: PropertyValue] in [
+            ["_targetSize": .null], ["_targetSize": .string("invalid")],
+            ["_targetSize": .string("{inf, 60}")], ["_isRelative": .bool(true)],
+            ["_useX": .bool(false)]
+        ] {
+            let (graph, node) = try archive(actionFields: valid.merging(change) { _, new in new },
+                className: "SKScale")
+            var decoder = ArchiveActionDecoder(graph: graph)
+            #expect(throws: SceneArchiveError.self) { try decoder.actions(node) }
+        }
+    }
+
     @Test func rejectsInvalidScaleActions() throws {
         for fields: [String: PropertyValue] in [
             ["_useX": .bool(false), "_useY": .bool(false)],
