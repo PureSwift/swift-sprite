@@ -610,3 +610,20 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: reversedScaleArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("reversed-scale-actions." + suffix))
 }
+
+let reversedSpeedScene = SKScene(size: CGSize(width: 100, height: 100))
+let reversedSpeed = SKAction.speed(by: 2, duration: 2).reversed()
+// This SDK resets reversed speed duration to zero. Cover both native output and
+// an explicitly assigned duration, preserving each archive's actual timing.
+let timedReversedSpeed = SKAction.speed(by: 2, duration: 2).reversed()
+timedReversedSpeed.duration = 2
+for action in [reversedSpeed, timedReversedSpeed] {
+    let node = SKNode()
+    node.run(action, withKey: "reversed-speed")
+    reversedSpeedScene.addChild(node)
+}
+let reversedSpeedArchive = try tilePlist(reversedSpeedScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: reversedSpeedArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("reversed-speed-actions." + suffix))
+}
