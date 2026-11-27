@@ -331,6 +331,17 @@ swift run sprite-viewer --sks Tests/SpriteFormatsTests/Fixtures/SceneArchives/sc
 ```
 
 The viewer loads loose PNGs relative to the archive and substitutes its built-in bitmap font.
+For custom classes, repeat `--class CustomName=SKNodeClass` as needed:
+
+```sh
+swift run sprite-viewer --sks Tests/SpriteFormatsTests/Fixtures/SceneArchives/custom-classes.sks --class FixtureGameScene=SKScene --class FixtureGameSprite=SKSpriteNode
+```
+
+Supported targets are `SKScene`, `SKNode`, `SKSpriteNode`, `SKCameraNode`,
+`SKLabelNode`, `SKEmitterNode`, `SKTileMapNode`, and `SKReferenceNode`.
+Mappings require `--sks`; duplicate names, built-in name overrides, and unknown targets
+are rejected before opening a window. The viewer prints substitution diagnostics;
+custom gameplay behavior is not restored.
 The fixture generator is `Tests/SpriteFormatsTests/Fixtures/make_scene_fixtures.swift`
 (macOS only); tests consume the checked-in archives and require no SpriteKit runtime.
 
