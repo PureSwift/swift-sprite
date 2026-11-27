@@ -164,9 +164,20 @@ import SpritePhysics
         }
     }
 
+    @MainActor @Test func restoresContinuousCollisionDetection() throws {
+        for enabled in [false, true] {
+            let data = try mutated("PKPhysicsBody", changes: ["needsContinuousCollsionDetection": enabled])
+            let scene = try SpriteKitSceneArchive.decode(data).makeNode()
+            #expect(scene.children[0].physicsBody?.usesContinuousCollisionDetection == enabled)
+            #expect(scene.children[1].physicsBody?.usesContinuousCollisionDetection == false)
+        }
+        let invalid = try mutated("PKPhysicsBody", changes: ["needsContinuousCollsionDetection": "yes"])
+        #expect(throws: SceneArchiveError.self) { try SpriteKitSceneArchive.decode(invalid) }
+    }
+
     @Test func rejectsUnsupportedPhysics() throws {
         for changes: [String: Any] in [["_shapeType": 99], ["pinned": true],
-            ["needsContinuousCollsionDetection": true], ["charge": 1]] {
+            ["charge": 1]] {
             let data = try mutated("PKPhysicsBody", changes: changes)
             #expect(throws: SceneArchiveError.self) { try SpriteKitSceneArchive.decode(data) }
         }
