@@ -6,7 +6,8 @@ import SpriteGraph
 public struct SpriteKitTileSetArchive: Sendable {
     public let name: String?
     struct Definition: Sendable {
-        let texture: ArchiveTexture
+        let textures: [ArchiveTexture]
+        let timePerFrame: Double
         let size: Vector2
     }
     let definitions: [Definition]
@@ -56,17 +57,27 @@ public struct SpriteKitTileSetArchive: Sendable {
                         throw SceneArchiveError.unsupported("Tile definition class")
                     }
                     let textures = try graph.array(definition["_textures"])
-                    guard textures.count == 1, try graph.array(definition["_normals"]).isEmpty,
-                          try graph.number(definition["_orientation"], default: 0) == 0,
-                          try graph.number(definition["_timePerFrame"], default: 0) == 0 else {
-                        throw SceneArchiveError.unsupported("Animated, oriented, or normal-mapped tile definition")
+                    guard !textures.isEmpty, textures.count <= 4096 else {
+                        throw SceneArchiveError.invalid("Invalid tile animation frame count")
+                    }
+                    budget -= textures.count
+                    guard budget >= 0 else { throw SceneArchiveError.invalid("Excessive tile animation frames") }
+                    guard try graph.array(definition["_normals"]).isEmpty,
+                          try graph.number(definition["_orientation"], default: 0) == 0 else {
+                        throw SceneArchiveError.unsupported("Oriented or normal-mapped tile definition")
+                    }
+                    let timePerFrame = Double(try graph.number(definition["_timePerFrame"], default: 0))
+                    guard timePerFrame >= 0, timePerFrame <= 31_536_000,
+                          textures.count == 1 || timePerFrame >= 1e-9 else {
+                        throw SceneArchiveError.invalid("Invalid tile animation frame duration")
                     }
                     let size = try Vector2(graph.number(definition["_width"], default: 0), graph.number(definition["_height"], default: 0))
                     guard size.x > 0, size.y > 0 else { throw SceneArchiveError.invalid("Invalid tile definition size") }
                     let index = definitions.count
                     indices[id] = index
                     members.insert(index)
-                    definitions.append(Definition(texture: try ArchiveTexture(textures[0], graph: graph), size: size))
+                    definitions.append(Definition(textures: try textures.map { try ArchiveTexture($0, graph: graph) },
+                                                  timePerFrame: timePerFrame, size: size))
                 }
             }
             groups.append(members)
@@ -143,11 +154,22 @@ struct ArchiveTileMap: Sendable {
                             texture: (ArchiveTexture) throws -> Texture) throws -> TileMap {
         try validate(set)
         var textures: [UInt32: Texture] = [:]
+        var animations: [UInt32: TileAnimation] = [:]
         for cell in cells where cell != 0x7fffffff {
             let id = cell & 0xffff
-            if textures[id] == nil { textures[id] = try texture(set.definitions[Int(id)].texture) }
+            if textures[id] == nil {
+                let definition = set.definitions[Int(id)]
+                let frames = try definition.textures.map(texture)
+                textures[id] = frames[0]
+                if frames.count > 1 {
+                    guard let animation = TileAnimation(textures: frames, timePerFrame: .seconds(definition.timePerFrame)) else {
+                        throw SceneArchiveError.invalid("Invalid tile animation")
+                    }
+                    animations[id] = animation
+                }
+            }
         }
-        let map = TileMap(tileSet: TileSet(textures: textures), columns: columns, rows: rows, tileSize: size)
+        let map = TileMap(tileSet: TileSet(textures: textures, animations: animations), columns: columns, rows: rows, tileSize: size)
         map.anchorPoint = anchor
         map.color = color
         map.blendMode = blend
