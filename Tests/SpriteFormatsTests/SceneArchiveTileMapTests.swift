@@ -6,6 +6,32 @@ import SpriteGraph
 
 @Suite struct SceneArchiveTileMapTests {
     @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresAnimatedDefinitions(format: String) throws {
+        let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/tiles-animated." + format)))
+        var requests = 0
+        let map = try #require(archive.makeNode(textureResolver: { _ in
+            requests += 1
+            return Texture(id: TextureID(rawValue: 7), textureSize: [80, 40])
+        }) as? TileMap)
+        #expect(requests == 1)
+        #expect(map.tileSet.animations.count == 1)
+        #expect(map.tileSet.animations[0]?.textures.count == 2)
+        #expect(map.tileSet.animations[0]?.timePerFrame == .milliseconds(250))
+        let scene = Scene(size: [100, 100])
+        scene.addChild(map)
+        let first = scene.makeFrame(viewportSize: [100, 100])
+        scene.advance(by: .milliseconds(250))
+        let next = scene.makeFrame(viewportSize: [100, 100])
+        #expect(next.vertices.count == 12)
+        #expect(next.vertices.map(\.position) == first.vertices.map(\.position))
+        #expect(next.vertices[0].texCoord.x == 0.5)
+        #expect(next.vertices[4].texCoord.x == 0.5)
+        #expect(next.vertices[8].texCoord.x == 0)
+        scene.advance(by: .milliseconds(250))
+        #expect(scene.makeFrame(viewportSize: [100, 100]).vertices == first.vertices)
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
     func restoresNativeGrid(format: String) throws {
         let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/tiles." + format)))
         var requests = 0
@@ -82,7 +108,8 @@ import SpriteGraph
         for (index, changes): (Int, [String: PropertyValue]) in [
             (setIndex, ["_type": .number(1)]),
             (definitionIndex, ["_orientation": .number(1)]),
-            (definitionIndex, ["_timePerFrame": .number(0.2)]),
+            (definitionIndex, ["_timePerFrame": .number(-0.2)]),
+            (definitionIndex, ["_timePerFrame": .number(.infinity)]),
             (definitionIndex, ["_textures": .array([])])
         ] {
             var objects = graph.objects
@@ -93,5 +120,25 @@ import SpriteGraph
                 "$version": .number(100_000), "$top": .dictionary(["root": .uid(graph.rootID)]), "$objects": .array(objects)]))
             #expect(throws: SceneArchiveError.self) { try SpriteKitTileSetArchive(.uid(setIndex), graph: modified) }
         }
+    }
+
+    @Test(arguments: [0.0, -1.0, 1e-12, 31_536_002.0, Double.nan, Double.infinity])
+    func rejectsInvalidAnimationTiming(seconds: Double) throws {
+        let graph = try KeyedArchive(ArchivePropertyList.decode(Data(contentsOf: Fixtures.url("SceneArchives/tiles-animated.sks"))))
+        let setIndex = try #require(graph.objects.firstIndex { value in
+            guard let fields = value.dictionary else { return false }
+            return (try? graph.className(fields)) == "SKTileSet"
+        })
+        var objects = graph.objects
+        for index in objects.indices {
+            guard var fields = objects[index].dictionary,
+                  (try? graph.className(fields)) == "SKTileDefinition",
+                  try graph.array(fields["_textures"]).count > 1 else { continue }
+            fields["_timePerFrame"] = .number(seconds)
+            objects[index] = .dictionary(fields)
+        }
+        let modified = try KeyedArchive(.dictionary(["$archiver": .string("NSKeyedArchiver"),
+            "$version": .number(100_000), "$top": .dictionary(["root": .uid(graph.rootID)]), "$objects": .array(objects)]))
+        #expect(throws: SceneArchiveError.self) { try SpriteKitTileSetArchive(.uid(setIndex), graph: modified) }
     }
 }
