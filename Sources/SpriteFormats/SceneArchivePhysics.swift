@@ -34,6 +34,7 @@ struct ArchivePhysicsBody: Sendable {
     let velocity: Vector2
     let angularVelocity: Float
     let dynamic: Bool
+    let pinned: Bool
     let affectedByGravity: Bool
     let allowsRotation: Bool
     let usesContinuousCollisionDetection: Bool
@@ -46,9 +47,7 @@ struct ArchivePhysicsBody: Sendable {
         guard try graph.className(fields) == "PKPhysicsBody" else {
             throw SceneArchiveError.unsupported("Physics body class")
         }
-        guard try !graph.boolean(fields["pinned"], default: false) else {
-            throw SceneArchiveError.unsupported("Physics body pinned")
-        }
+        pinned = try graph.boolean(fields["pinned"], default: false)
         guard try graph.number(fields["charge"], default: 0) == 0 else {
             throw SceneArchiveError.unsupported("Charged physics body")
         }
@@ -119,6 +118,7 @@ struct ArchivePhysicsBody: Sendable {
         body.angularVelocity = angularVelocity
         // SpriteKit ignores the archived dynamic flag for bodies without volume.
         body.isDynamic = dynamic && body.area > 0
+        body.isPinned = pinned
         body.affectedByGravity = affectedByGravity
         body.allowsRotation = allowsRotation
         body.usesContinuousCollisionDetection = usesContinuousCollisionDetection
