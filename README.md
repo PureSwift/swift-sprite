@@ -11,8 +11,8 @@ Pure-Swift, prefix-free 2D rendering for Linux, macOS, and iOS. See [ARCHITECTUR
 | `SpriteCore` | 2D math (`Matrix3x3`, `Transform2D`, `Rect`, `Color`), `Texture`, `TextureAtlas`, `SpriteBatcher`, and the `SpriteRenderBackend` protocol. No platform dependencies. |
 | `SpriteGraph` | Scene tree: `Scene` (scale modes, `Duration`-driven update loop, `physicsWorld`), `Node` (`@Node2DBuilder`, `physicsBody`), `Sprite` (9-patch `centerRect`), `Label` (bitmap / SDF `BitmapFont`), `Camera`, `ParticleEmitter` (structure-of-arrays simulation, keyframe sequences), `TileMap` / `TileSet` (editable grids with cached quad chunks), and composable value-type `Action`s. |
 | `SpritePhysics` | Swift API over [Box2D](https://box2d.org) v3: `PhysicsWorld`, `PhysicsBody`, `PhysicsShape`, `PhysicsCategory` masks, contact/sensor notifications, ray casts, and pin / fixed / distance / spring joints. |
-| `SpriteFormats` | PNG decoding via [swift-png](https://github.com/PureSwift/swift-png), SpriteKit `.atlas` / `.atlasc`, libGDX / Spine `.atlas`, Aseprite JSON sprite sheets with tag animations and 9-patch slices, and finite orthogonal Tiled `.tmx` / `.tsx` maps. |
-| `SpriteSDL` | SDL3 window, input events, and `SDLRenderBackend` batch renderer. |
+| `SpriteFormats` | PNG decoding via [swift-png](https://github.com/PureSwift/swift-png), SpriteKit `.atlas` / `.atlasc`, libGDX / Spine `.atlas`, Aseprite JSON sprite sheets with tag animations and 9-patch slices, finite orthogonal Tiled `.tmx` / `.tsx` maps, and an initial SpriteKit `.sks` scene archive reader using Foundation. |
+| `SpriteSDL` | SDL3 window, input events, and batch rendering through [PureSwift/SDL](https://github.com/PureSwift/SDL)'s `SDL3Swift` product (3.3.0+). |
 | `sprite-viewer` | SDL3 demo and inspector for scenes and the batch renderer. |
 
 ## Requirements
@@ -123,6 +123,43 @@ Preview the included fixture from the repository root:
 ```sh
 swift run sprite-viewer --tmx Tests/SpriteFormatsTests/Fixtures/Tiled/sample.tmx
 ```
+
+### SpriteKit scene archives
+
+```swift
+let archive = try await SpriteKitSceneArchive.decode(at: sceneURL)
+let root = try archive.makeNode(
+    textureResolver: { reference in textures[reference.imageName] },
+    fontResolver: { name in fonts[name] }
+)
+```
+
+Foundation's `PropertyListSerialization` reads binary and XML keyed archives.
+The loader maps `SKScene`, `SKNode`, `SKSpriteNode`, `SKCameraNode`, and `SKLabelNode`
+to engine nodes, preserving child order, transforms, opacity, visibility, scene settings,
+camera identity, sprite geometry/tint, and label layout. A root `Scene` can be presented
+directly; other root nodes can be attached to an existing scene.
+
+Applications supply named texture and bitmap/SDF font resolvers; missing resources throw
+explicit errors. Texture references include image, atlas, subtexture, and filtering information.
+Resolvers return the named image or atlas entry before the archive's unit-rectangle crop.
+Returned textures remain owned by the application's backend.
+
+This is an initial archive subset tested against fixtures generated with macOS SpriteKit,
+not a guarantee of compatibility with every Xcode editor or OS archive version.
+Custom/unknown node classes, physics bodies, actions, constraints, effects, lighting,
+attributed labels, embedded image data, and rotated/trimmed textures are unsupported.
+Scene physics-world settings and user data are omitted with entries in `diagnostics`.
+Other editor metadata is ignored. Binary UIDs are normalized through Foundation's XML
+serialization without using private UID APIs or instantiating archived classes.
+
+```sh
+swift run sprite-viewer --sks Tests/SpriteFormatsTests/Fixtures/SceneArchives/scene.sks
+```
+
+The viewer loads loose PNGs relative to the archive and substitutes its built-in bitmap font.
+The fixture generator is `Tests/SpriteFormatsTests/Fixtures/make_scene_fixtures.swift`
+(macOS only); tests consume the checked-in archives and require no SpriteKit runtime.
 
 ### Batch renderer
 

@@ -41,6 +41,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/PureSwift/swift-png.git", from: "0.2.0"),
+        .package(url: "https://github.com/PureSwift/SDL.git", from: "3.3.0"),
     ],
     targets: [
         // Pure Swift: 2D math, textures, atlases, quad batching and render backend protocol.
@@ -68,7 +69,7 @@ let package = Package(
             dependencies: ["SpriteCore", "SpritePhysics"],
             swiftSettings: swiftSettings
         ),
-        // Asset codecs: DEFLATE, PNG, texture atlases and sprite sheets.
+        // Asset codecs: PNG, texture atlases, sprite sheets, tile maps and scene archives.
         .target(
             name: "SpriteFormats",
             dependencies: [
@@ -78,24 +79,16 @@ let package = Package(
             ],
             swiftSettings: swiftSettings
         ),
-        // System module map for the SDL3 C library.
-        .systemLibrary(
-            name: "CSDL3",
-            pkgConfig: "sdl3",
-            providers: [
-                .brew(["sdl3"]),
-                .apt(["libsdl3-dev"]),
-            ]
-        ),
         // SDL3 windowing, input and batch renderer backend.
         .target(
             name: "SpriteSDL",
-            dependencies: ["SpriteCore", "CSDL3"],
+            dependencies: ["SpriteCore", .product(name: "SDL3Swift", package: "SDL")],
             swiftSettings: swiftSettings
         ),
         .executableTarget(
             name: "sprite-viewer",
-            dependencies: ["SpriteCore", "SpriteGraph", "SpritePhysics", "SpriteSDL", "SpriteFormats"],
+            dependencies: ["SpriteCore", "SpriteGraph", "SpritePhysics", "SpriteSDL", "SpriteFormats",
+                .product(name: "SDL3Swift", package: "SDL")],
             path: "Tools/sprite-viewer",
             swiftSettings: swiftSettings
         ),
@@ -120,6 +113,11 @@ let package = Package(
         .testTarget(
             name: "SpriteGraphTests",
             dependencies: ["SpriteGraph"],
+            swiftSettings: swiftSettings
+        ),
+        .testTarget(
+            name: "SpriteSDLTests",
+            dependencies: ["SpriteSDL", .product(name: "SDL3Swift", package: "SDL")],
             swiftSettings: swiftSettings
         ),
     ]

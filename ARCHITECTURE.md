@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the target architecture for both repositories and their integration into Perry; listed capabilities and execution phases are not a statement that every feature is implemented. The supplied blueprint targets pure-Swift engine implementations, including a native 2D impulse solver. The current `swift-sprite` implementation uses Box2D v3 through `CBox2D` for physics and SDL3 through `CSDL3` for hosting, so it is not currently 100% pure Swift. Replacing Box2D would be a separate implementation phase.
+This document describes the target architecture for both repositories and their integration into Perry; listed capabilities and execution phases are not a statement that every feature is implemented. The supplied blueprint targets pure-Swift engine implementations, including a native 2D impulse solver. The current `swift-sprite` implementation uses Box2D v3 through `CBox2D` for physics and SDL3 through PureSwift/SDL's `SDL3Swift` product for hosting, so it is not currently 100% pure Swift. Replacing Box2D would be a separate implementation phase.
 
 Two decoupled, Swift-first repositories provide modern, prefix-free, idiomatic Swift APIs for 3D and 2D rendering, physics, and asset codecs across Linux, macOS, and iOS—while serving as the underlying engines for **Perry**'s `SceneKit`, `QuickDraw 3D`, and `SpriteKit` compatibility layers.
 
@@ -71,7 +71,6 @@ swift-sprite/
 ├── README.md
 ├── Sources/
 │   ├── CBox2D/               # System library module for Box2D v3 (pkg-config `box2d`)
-│   ├── CSDL3/                # System library module for SDL3 (pkg-config `sdl3`)
 │   ├── SpriteCore/           # Pure Swift: 2D simd math, SpriteBatcher, Texture, TextureAtlas, SpriteRenderBackend
 │   ├── SpriteGraph/          # Idiomatic 2D scene tree: Scene, Node, Sprite, Shape, Label, TileMap, Camera, Action, ParticleEmitter
 │   ├── SpritePhysics/        # Idiomatic Swift wrapper over Box2D v3: bodies, shapes, joints, contacts, raycasts & OptionSet masks
@@ -109,7 +108,7 @@ swift-sprite/
 4. **Phase 4 — `SpriteFormats`**: Implement `.atlas`, Tiled `.tmx`/`.tsx`, Aseprite `.json`, and binary plist `.sks` archive decoders. Delivered in three parts:
    - **4a — Images & atlases**: PNG decoding through [swift-png](https://github.com/PureSwift/swift-png) (normalized to RGBA8 with its libpng-compatible read transforms); SpriteKit `.atlas` folders and compiled `.atlasc`, libGDX/Spine text atlases, and Aseprite sheets. Trimmed and rotated regions are restored to their original size and orientation, then repacked.
    - **4b — Tile maps (initial implementation delivered)**: Editable `TileMap` / `TileSet` grids with cached 16×16 quad chunks; finite orthogonal Tiled `.tmx` / `.tsx` decoding with CSV data, PNG sheets, flip flags, and layer state. Includes fixtures, tests, and `sprite-viewer --tmx`. See README for supported features and remaining format limitations.
-   - **4c — Scene archives**: binary property list and `NSKeyedArchiver` decoding of SpriteKit `.sks` files into `SpriteGraph` nodes.
+   - **4c — Scene archives (initial implementation delivered)**: Foundation property-list reading and keyed-archive reference resolution for scenes, nodes, sprites, cameras, and labels, with configurable texture/font resolvers, native fixtures, and `sprite-viewer --sks`. Physics bodies, actions, emitters, tile maps, and other archived classes remain future work. See README for compatibility limits.
 
 ### Physics Backend: Box2D v3
 

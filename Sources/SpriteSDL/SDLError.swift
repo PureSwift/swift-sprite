@@ -3,7 +3,7 @@
 //  SpriteSDL
 //
 
-import CSDL3
+import SDL3Swift
 
 /// Error raised when an SDL call fails, carrying `SDL_GetError()`.
 public struct SDLError: Error, CustomStringConvertible, Sendable {
@@ -19,7 +19,7 @@ public struct SDLError: Error, CustomStringConvertible, Sendable {
 
     /// Captures the current SDL error string for the failing function.
     static func last(_ function: String = #function) -> SDLError {
-        SDLError(function, message: String(cString: SDL_GetError()))
+        SDLError(function, message: SDL3Swift.SDLError.current()?.errorMessage ?? "SDL operation failed")
     }
 
     public var description: String {

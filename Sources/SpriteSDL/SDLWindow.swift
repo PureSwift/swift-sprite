@@ -1,79 +1,62 @@
-//
-//  SDLWindow.swift
-//  SpriteSDL
-//
-
-import CSDL3
+import SDL3Swift
 import SpriteCore
 
-/// SDL3 window paired with an accelerated renderer.
-///
-/// SDL video APIs must be called from the main thread.
+/// SDL3 window and renderer managed by PureSwift/SDL.
+/// Video and rendering operations must run on the main thread.
 public final class SDLWindow {
+    private var ownedWindow: SDL3Swift.SDLWindow?
+    private var ownedRenderer: SDLRenderer?
 
-    /// `SDL_Window *`
-    let window: OpaquePointer
+    var renderer: SDLRenderer {
+        guard let ownedRenderer else { preconditionFailure("Renderer has been released") }
+        return ownedRenderer
+    }
 
-    /// `SDL_Renderer *`
-    let renderer: OpaquePointer
-
-    /// `SDL_WINDOW_RESIZABLE`; the `SDL_UINT64_C` macro is not importable.
-    private static let resizable: UInt64 = 0x0000_0000_0000_0020
-
-    /// `SDL_WINDOW_HIGH_PIXEL_DENSITY`
-    private static let highPixelDensity: UInt64 = 0x0000_0000_0000_2000
-
-    public init(
-        title: String,
-        width: Int,
-        height: Int,
-        resizable: Bool = true,
-        vsync: Bool = true
-    ) throws {
-        try SDL_InitSubSystem(SDL_INIT_VIDEO).check("SDL_InitSubSystem")
-        var flags = Self.highPixelDensity
-        if resizable {
-            flags |= Self.resizable
+    public init(title: String, width: Int, height: Int, resizable: Bool = true, vsync: Bool = true) throws {
+        guard width > 0, height > 0, Int32(exactly: width) != nil, Int32(exactly: height) != nil else {
+            throw SDLError("SDLWindow", message: "Invalid window dimensions")
         }
-        var window: OpaquePointer?
-        var renderer: OpaquePointer?
-        guard SDL_CreateWindowAndRenderer(title, Int32(width), Int32(height), flags, &window, &renderer),
-              let window, let renderer else {
-            let error = SDLError.last("SDL_CreateWindowAndRenderer")
-            SDL_QuitSubSystem(SDL_INIT_VIDEO)
+        try SDL.initialize(subSystem: .video)
+        do {
+            var options: BitMaskOptionSet<SDL3Swift.SDLWindow.Option> = [.highPixelDensity]
+            if resizable { options.insert(.resizable) }
+            let window = try SDL3Swift.SDLWindow(title: title, width: width, height: height, options: options)
+            ownedWindow = window
+            ownedRenderer = try SDLRenderer(window: window)
+            // VSync is best-effort, as in the original backend.
+            try? renderer.setVSync(vsync ? .every(1) : .disabled)
+        } catch {
+            ownedRenderer = nil
+            ownedWindow = nil
+            SDL.quit(subSystems: [.video])
             throw error
         }
-        self.window = window
-        self.renderer = renderer
-        SDL_SetRenderVSync(renderer, vsync ? 1 : 0)
     }
 
     deinit {
-        SDL_DestroyRenderer(renderer)
-        SDL_DestroyWindow(window)
-        SDL_QuitSubSystem(SDL_INIT_VIDEO)
+        // The wrappers own their handles; release them before quitting the video subsystem.
+        ownedRenderer = nil
+        ownedWindow = nil
+        SDL.quit(subSystems: [.video])
     }
 
     public var title: String {
-        get { String(cString: SDL_GetWindowTitle(window)) }
-        set { SDL_SetWindowTitle(window, newValue) }
+        get { ownedWindow?.title ?? "" }
+        set { ownedWindow?.title = newValue }
     }
 
-    /// Size of the renderer output in pixels.
     public var drawableSize: Vector2 {
-        var w: Int32 = 0, h: Int32 = 0
-        SDL_GetCurrentRenderOutputSize(renderer, &w, &h)
-        return Vector2(Float(w), Float(h))
+        guard let size = renderer.currentOutputSize else { return .zero }
+        return Vector2(Float(size.width), Float(size.height))
     }
 
-    /// Drains the SDL event queue.
     public func pollEvents() -> [InputEvent] {
-        var events = [InputEvent]()
-        var event = SDL_Event()
-        while SDL_PollEvent(&event) {
-            // Map window coordinates (points) to renderer coordinates (pixels).
-            SDL_ConvertEventToRenderCoordinates(renderer, &event)
-            if let input = InputEvent(event, drawableSize: drawableSize) {
+        var events: [InputEvent] = []
+        while let event = SDL.pollEvent() {
+            if let input = InputEvent(event, drawableSize: drawableSize, windowToRender: { point in
+                let converted = renderer.renderCoordinates(fromWindow: (point.x, point.y))
+                return Vector2(converted.x, converted.y)
+            }) {
                 events.append(input)
             }
         }
@@ -82,39 +65,32 @@ public final class SDLWindow {
 }
 
 extension InputEvent {
-
-    init?(_ event: SDL_Event, drawableSize: Vector2) {
-        switch SDL_EventType(rawValue: event.type) {
-        case SDL_EVENT_QUIT, SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+    init?(_ event: SDLEvent, drawableSize: Vector2, windowToRender: (Vector2) -> Vector2) {
+        switch event {
+        case .quit, .window(_, .closeRequested):
             self = .quit
-        case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+        case .window(_, .pixelSizeChanged):
             self = .resized(drawableSize)
-        case SDL_EVENT_KEY_DOWN:
-            self = .keyDown(KeyCode(rawValue: event.key.key), isRepeat: event.key.repeat)
-        case SDL_EVENT_KEY_UP:
-            self = .keyUp(KeyCode(rawValue: event.key.key))
-        case SDL_EVENT_MOUSE_MOTION:
-            self = .mouseMoved(Vector2(event.motion.x, event.motion.y))
-        case SDL_EVENT_MOUSE_BUTTON_DOWN:
-            self = .mouseDown(MouseButton(rawValue: event.button.button), Vector2(event.button.x, event.button.y))
-        case SDL_EVENT_MOUSE_BUTTON_UP:
-            self = .mouseUp(MouseButton(rawValue: event.button.button), Vector2(event.button.x, event.button.y))
-        case SDL_EVENT_MOUSE_WHEEL:
-            self = .mouseWheel(Vector2(event.wheel.x, event.wheel.y))
-        case SDL_EVENT_FINGER_DOWN:
-            self = .touchDown(finger: event.tfinger.fingerID, Self.touchPosition(event, drawableSize))
-        case SDL_EVENT_FINGER_MOTION:
-            self = .touchMoved(finger: event.tfinger.fingerID, Self.touchPosition(event, drawableSize))
-        case SDL_EVENT_FINGER_UP:
-            self = .touchUp(finger: event.tfinger.fingerID, Self.touchPosition(event, drawableSize))
+        case let .keyDown(_, _, key, _, isRepeat):
+            self = .keyDown(KeyCode(rawValue: key.rawValue), isRepeat: isRepeat)
+        case let .keyUp(_, _, key, _, _):
+            self = .keyUp(KeyCode(rawValue: key.rawValue))
+        case let .mouseMotion(_, _, _, x, y, _, _):
+            self = .mouseMoved(windowToRender([x, y]))
+        case let .mouseButtonDown(_, _, button, _, x, y):
+            self = .mouseDown(MouseButton(rawValue: button.rawValue), windowToRender([x, y]))
+        case let .mouseButtonUp(_, _, button, _, x, y):
+            self = .mouseUp(MouseButton(rawValue: button.rawValue), windowToRender([x, y]))
+        case let .mouseWheel(_, _, x, y, _, _, _):
+            self = .mouseWheel([x, y])
+        case let .fingerDown(_, _, finger, x, y):
+            self = .touchDown(finger: finger.rawValue, Vector2(x, y) * drawableSize)
+        case let .fingerMotion(_, _, finger, x, y):
+            self = .touchMoved(finger: finger.rawValue, Vector2(x, y) * drawableSize)
+        case let .fingerUp(_, _, finger, x, y), let .fingerCanceled(_, _, finger, x, y):
+            self = .touchUp(finger: finger.rawValue, Vector2(x, y) * drawableSize)
         default:
             return nil
         }
-    }
-
-    /// Touch coordinates are normalized (0...1) unless converted by the renderer.
-    private static func touchPosition(_ event: SDL_Event, _ size: Vector2) -> Vector2 {
-        let p = Vector2(event.tfinger.x, event.tfinger.y)
-        return (p.x <= 1 && p.y <= 1) ? p * size : p
     }
 }

@@ -1,123 +1,87 @@
-//
-//  SDLRenderBackend.swift
-//  SpriteSDL
-//
-
-import CSDL3
+import SDL3Swift
 import SpriteCore
 
-/// ``SpriteRenderBackend`` drawing batched geometry with `SDL_RenderGeometry`.
-///
-/// SDL selects the GPU API (Metal, Vulkan, OpenGL, OpenGL ES, Direct3D) for the platform.
+/// Batched geometry rendered through PureSwift/SDL's SDL3Swift product.
+/// SDL selects the GPU API for the platform.
 public final class SDLRenderBackend: SpriteRenderBackend {
-
     public let window: SDLWindow
-
-    private var textures = [TextureID: UnsafeMutablePointer<SDL_Texture>]()
-
+    private var textures: [TextureID: SDLTexture] = [:]
     private var nextTextureID: UInt32 = 1
-
-    /// Reused per-frame conversion buffers.
-    private var vertexBuffer = [SDL_Vertex]()
-    private var indexBuffer = [Int32]()
+    private var vertexBuffer: [SDLRenderer.Vertex] = []
+    private var indexBuffer: [Int32] = []
 
     public init(window: SDLWindow) {
         self.window = window
     }
 
     deinit {
-        for texture in textures.values {
-            SDL_DestroyTexture(texture)
-        }
+        // Textures must be destroyed before the window releases its renderer.
+        textures.removeAll()
     }
 
-    private var renderer: OpaquePointer {
-        window.renderer
-    }
-
-    public var drawableSize: Vector2 {
-        window.drawableSize
-    }
+    public var drawableSize: Vector2 { window.drawableSize }
 
     public func makeTexture(_ pixels: PixelBuffer, filtering: TextureFiltering) throws -> Texture {
-        guard let texture = SDL_CreateTexture(
-            renderer,
-            SDL_PIXELFORMAT_RGBA32,
-            SDL_TEXTUREACCESS_STATIC,
-            Int32(pixels.width),
-            Int32(pixels.height)
-        ) else {
-            throw SDLError.last("SDL_CreateTexture")
-        }
-        SDL_SetTextureScaleMode(texture, filtering == .nearest ? SDL_SCALEMODE_NEAREST : SDL_SCALEMODE_LINEAR)
+        let texture = try SDLTexture(renderer: window.renderer, format: .rgba32, access: .static,
+            width: pixels.width, height: pixels.height)
+        try texture.setScaleMode(filtering == .nearest ? .nearest : .linear)
+        try upload(pixels, to: texture)
         let id = TextureID(rawValue: nextTextureID)
         nextTextureID += 1
         textures[id] = texture
-        let handle = Texture(id: id, textureSize: pixels.size)
-        try updateTexture(handle, with: pixels)
-        return handle
+        return Texture(id: id, textureSize: pixels.size)
+    }
+
+    private func upload(_ pixels: PixelBuffer, to texture: SDLTexture) throws {
+        try pixels.pixels.withUnsafeBytes { bytes in
+            guard let address = bytes.baseAddress else { return }
+            // SDL_UpdateTexture reads this memory; the wrapper currently takes a mutable pointer.
+            try texture.update(pixels: UnsafeMutableRawPointer(mutating: address), pitch: pixels.pitch)
+        }
     }
 
     public func updateTexture(_ texture: Texture, with pixels: PixelBuffer) throws {
         guard let sdlTexture = textures[texture.id] else { return }
-        try pixels.pixels.withUnsafeBytes {
-            try SDL_UpdateTexture(sdlTexture, nil, $0.baseAddress, Int32(pixels.pitch)).check("SDL_UpdateTexture")
+        guard pixels.size == texture.textureSize else {
+            throw SDLError("updateTexture", message: "Pixel dimensions must match the backing texture")
         }
+        try upload(pixels, to: sdlTexture)
     }
 
     public func destroyTexture(_ texture: Texture) {
-        if let sdlTexture = textures.removeValue(forKey: texture.id) {
-            SDL_DestroyTexture(sdlTexture)
-        }
+        textures.removeValue(forKey: texture.id)
     }
 
     public func render(_ frame: SpriteFrame, clearColor: Color) throws {
-        try SDL_SetRenderDrawColorFloat(renderer, clearColor.red, clearColor.green, clearColor.blue, clearColor.alpha)
-            .check("SDL_SetRenderDrawColorFloat")
-        try SDL_RenderClear(renderer).check("SDL_RenderClear")
-
+        let renderer = window.renderer
+        try renderer.setDrawColorFloat(red: clearColor.red, green: clearColor.green,
+            blue: clearColor.blue, alpha: clearColor.alpha)
+        try renderer.clear()
         vertexBuffer.removeAll(keepingCapacity: true)
-        for v in frame.vertices {
-            vertexBuffer.append(SDL_Vertex(
-                position: SDL_FPoint(x: v.position.x, y: v.position.y),
-                color: SDL_FColor(r: v.color.red, g: v.color.green, b: v.color.blue, a: v.color.alpha),
-                tex_coord: SDL_FPoint(x: v.texCoord.x, y: v.texCoord.y)
-            ))
+        for vertex in frame.vertices {
+            vertexBuffer.append(SDLRenderer.Vertex(x: vertex.position.x, y: vertex.position.y,
+                color: .init(red: vertex.color.red, green: vertex.color.green,
+                    blue: vertex.color.blue, alpha: vertex.color.alpha),
+                textureX: vertex.texCoord.x, textureY: vertex.texCoord.y))
         }
-        indexBuffer.removeAll(keepingCapacity: true)
-        indexBuffer.append(contentsOf: frame.indices.lazy.map { Int32(bitPattern: $0) })
-
-        try vertexBuffer.withUnsafeBufferPointer { vertices in
-            try indexBuffer.withUnsafeBufferPointer { indices in
-                for batch in frame.batches where !batch.indexRange.isEmpty {
-                    let texture = textures[batch.texture]
-                    let blend = Self.sdlBlendMode(batch.blendMode)
-                    if let texture {
-                        SDL_SetTextureBlendMode(texture, blend)
-                    } else {
-                        SDL_SetRenderDrawBlendMode(renderer, blend)
-                    }
-                    try SDL_RenderGeometry(
-                        renderer,
-                        texture,
-                        vertices.baseAddress,
-                        Int32(vertices.count),
-                        indices.baseAddress! + batch.indexRange.lowerBound,
-                        Int32(batch.indexRange.count)
-                    ).check("SDL_RenderGeometry")
-                }
-            }
+        for batch in frame.batches where !batch.indexRange.isEmpty {
+            let texture = textures[batch.texture]
+            let blend = Self.blendMode(batch.blendMode)
+            if let texture { try texture.setBlendMode(blend) }
+            else { try renderer.setDrawBlendMode(blend) }
+            indexBuffer.removeAll(keepingCapacity: true)
+            indexBuffer.append(contentsOf: frame.indices[batch.indexRange].map { Int32(bitPattern: $0) })
+            try renderer.drawGeometry(texture: texture, vertices: vertexBuffer, indices: indexBuffer)
         }
-
-        try SDL_RenderPresent(renderer).check("SDL_RenderPresent")
+        renderer.present()
     }
 
-    private static func sdlBlendMode(_ mode: BlendMode) -> SDL_BlendMode {
+    private static func blendMode(_ mode: BlendMode) -> BitMaskOptionSet<SDLBlendMode> {
         switch mode {
-        case .alpha: SDL_BLENDMODE_BLEND
-        case .add: SDL_BLENDMODE_ADD
-        case .multiply: SDL_BLENDMODE_MUL
-        case .replace: SDL_BLENDMODE_NONE
+        case .alpha: [.alpha]
+        case .add: [.additive]
+        case .multiply: [.multiply]
+        case .replace: []
         }
     }
 }
