@@ -220,16 +220,16 @@ fixtures cover binary/XML decoding and simulation without requiring SpriteKit at
 Archived actions support relative/absolute movement (including single-axis movement),
 color-and-blend or blend-only colorization,
 Z rotation, two-axis scaling, single-axis absolute scaling, scaling sprites to a display size, absolute/relative sprite resizing (including independent width/height targets), fading, node-speed changes, waits, hide/unhide, removal, sequences, groups,
-finite repeats, repeat-forever, relative child-path action dispatch, `SKAnimate` texture flipbooks and instantaneous texture replacement, and `SKPlaySound` callbacks. The ordered action list and keys are restored without
+finite repeats, repeat-forever, relative and root-relative child-path action dispatch, `SKAnimate` texture flipbooks and instantaneous texture replacement, and `SKPlaySound` callbacks. The ordered action list and keys are restored without
 duplicating keyed actions. Each `makeNode()` creates independent playback state, and
 standard timing modes use the engine's easing curves. Size-based scaling resolves the
 sprite's base size when playback starts; zero-sized dimensions retain their scale,
 and nonsprite nodes are unaffected.
 
-Child dispatch resolves the first match for an exact relative path (such as
-`container/target`) at playback time,
+Child dispatch resolves the first match for an exact path at playback time.
+`container/target` starts at the caller; `/container/target` starts at its current tree root. It
 starts independent playback, and completes immediately. Missing children are a no-op.
-Root/recursive searches, wildcard expressions, keyed dispatch, and waiting for keyed actions are unsupported.
+Recursive searches, wildcard expressions, keyed dispatch, and waiting for keyed actions are unsupported.
 
 Actions start from their archived descriptions. Reversed relative movement, Z rotation,
 resizing, two-axis scaling, and relative speed changes use the reversed deltas or reciprocal factors stored
@@ -396,7 +396,7 @@ sound once and preserves archived action waits without loading audio files. With
 `--mute`, sound actions still fail with a missing-sound error.
 
 The script uses SDL's dummy video driver and software renderer, requires clean exits
-and completed frames for successful loads, and treats timeouts as failures. Its 34
+and completed frames for successful loads, and treats timeouts as failures. Its 35
 checks cover custom classes, references, muted sound actions, source/compiled atlases, physics fixtures,
 and invalid options or resources. Temporary derived archives stay outside the repository.
 The `Viewer smoke tests` workflow builds the viewer, runs the full Swift test suite,
