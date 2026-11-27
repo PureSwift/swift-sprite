@@ -70,7 +70,9 @@ struct ArchiveEmitter: Sendable {
     @MainActor func makeEmitter(texture: Texture?) -> ParticleEmitter {
         let emitter = ParticleEmitter()
         emitter.particleTexture = texture
-        emitter.particleSize = size
+        // SpriteKit's zero-size sentinel follows the assigned texture's dimensions.
+        // Preserve zero without a texture, where no visible size has been specified.
+        emitter.particleSize = size == .zero && texture != nil ? nil : size
         emitter.particlePosition = position
         emitter.particlePositionRange = range
         emitter.acceleration = acceleration
