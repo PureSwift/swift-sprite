@@ -285,7 +285,7 @@ public extension Action {
     /// Components are exact names, `.` (current node), or `..` (parent).
     /// A `//` prefix searches from the root; `.//` searches this node's descendants.
     /// Within a path, `//` searches descendants of the preceding matches.
-    /// `*` matches zero or more characters in a name, including unnamed nodes for `*`.
+    /// `*` matches zero or more characters in a name, including unnamed nodes for `*`. Bracket sets and ranges match one character.
     /// Lookup happens at playback time. A missing child is a no-op.
     /// This action completes immediately without waiting for the child's action.
     static func run(_ action: Action, onChildWithName name: String) -> Action {
@@ -309,12 +309,13 @@ public extension Action {
                     recursive = true
                     continue
                 }
+                guard let pattern = NodeNamePattern(component) else { return }
                 if recursive {
                     var matches: [Node] = []
                     var seen = Set<ObjectIdentifier>()
                     for candidate in candidates {
                         candidate.enumerateDescendants { descendant, _ in
-                            if matchesChildName(descendant.name, pattern: component), seen.insert(ObjectIdentifier(descendant)).inserted {
+                            if pattern.matches(descendant.name), seen.insert(ObjectIdentifier(descendant)).inserted {
                                 matches.append(descendant)
                             }
                         }
@@ -330,40 +331,13 @@ public extension Action {
                     candidates = candidates.compactMap(\.parent).filter { seen.insert(ObjectIdentifier($0)).inserted }
                 } else {
                     candidates = candidates.flatMap { parent in
-                        parent.children.filter { matchesChildName($0.name, pattern: component) }
+                        parent.children.filter { pattern.matches($0.name) }
                     }
                 }
                 if candidates.isEmpty { return }
             }
             candidates.first?.run(action)
         }
-    }
-
-    private static func matchesChildName(_ name: String?, pattern: String) -> Bool {
-        guard pattern.contains("*") else { return name == pattern }
-        let characters = Array(name ?? "")
-        let tokens = Array(pattern)
-        var index = 0, token = 0, retryIndex = 0
-        var star: Int?
-        // Retry only the most recent star; this avoids recursive wildcard expansion.
-        while index < characters.count {
-            if token < tokens.count && tokens[token] == "*" {
-                star = token
-                token += 1
-                retryIndex = index
-            } else if token < tokens.count && tokens[token] == characters[index] {
-                token += 1
-                index += 1
-            } else if let star {
-                retryIndex += 1
-                index = retryIndex
-                token = star + 1
-            } else {
-                return false
-            }
-        }
-        while token < tokens.count && tokens[token] == "*" { token += 1 }
-        return token == tokens.count
     }
 
     static func run(_ block: @escaping Block) -> Action {
