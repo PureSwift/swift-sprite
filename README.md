@@ -168,7 +168,7 @@ not a guarantee of compatibility with every Xcode editor or OS archive version.
 Custom/unknown node classes, constraints, effects, lighting,
 attributed labels, embedded image data, and rotated/trimmed textures are unsupported.
 User data is omitted with entries in `diagnostics`.
-Circle, rectangle, and convex counterclockwise polygon physics bodies are restored with
+Circle, rectangle, convex counterclockwise polygon, and compound physics bodies are restored with
 local centers, mass, friction, restitution, damping, velocity, dynamic/gravity/rotation
 flags, and all 32 bits of collision/contact masks. Scene gravity and simulation speed
 are imported. SpriteKit density is converted from kilograms per square meter to the
@@ -177,7 +177,11 @@ converted to points per second squared using the same scale. Linear velocity rem
 in points per second. Imported scenes use the existing Box2D solver and fixed timestep;
 this does not promise identical SpriteKit simulation results.
 
-Edges, compound/texture-derived bodies, curved or nonconvex paths, joints, pinned bodies,
+Compound bodies support archived circles and convex polygon components, including their
+local offsets; polygon components are converted from meters to points. Loading is limited
+to 256 components and 4,096 polygon vertices per compound body.
+
+Edges, unsupported texture-derived geometry, curved or nonconvex paths, joints, pinned bodies,
 precise collision detection, charged bodies, and physics bodies under scaled nodes are
 currently rejected. Field masks and internal collision skin radii are not imported;
 field nodes are unsupported and the engine uses its own collision geometry. Physics
