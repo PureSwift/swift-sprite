@@ -192,7 +192,13 @@ while a body is in a world. Static collisions already use continuous detection; 
 and bullet-to-bullet pairs are excluded. This reduces tunneling without guaranteeing
 SpriteKit's collision timing or preventing every missed collision.
 
-Unsupported texture-derived geometry, curved paths, nonconvex volume polygons, joints, pinned bodies,
+Pinned bodies restore `PhysicsBody.isPinned`, which holds the node origin at a pivot
+while allowing rotation, including shapes with offset centers of mass. Moving the node
+or explicitly transforming its parent moves the pivot. Unpinning releases it, and
+removing the body cleans up its internal anchor. Pinning does not physically couple
+the body to a dynamic parent; use an explicit `PinJoint` for that behavior.
+
+Unsupported texture-derived geometry, curved paths, nonconvex volume polygons, archived joints,
 charged bodies, and physics bodies under scaled nodes are
 currently rejected. Field masks and internal collision skin radii are not imported;
 field nodes are unsupported and the engine uses its own collision geometry. Physics
