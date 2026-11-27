@@ -307,7 +307,10 @@ public struct SpriteKitSceneArchive: Sendable {
             node.isPaused = record.paused
             node.speed = record.speed
             node.physicsBody = record.physicsBody?.makeBody()
-            for action in record.actions { node.run(action.action, withKey: action.key) }
+            for action in record.actions {
+                let resolved = try action.action.makeAction { try resolveTexture($0.reference, rect: $0.rect) }
+                node.run(resolved, withKey: action.key)
+            }
             nodes[record.id] = node
         }
         for record in records {
