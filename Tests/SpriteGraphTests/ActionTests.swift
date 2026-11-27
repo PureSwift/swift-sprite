@@ -61,6 +61,27 @@ import SpriteCore
         #expect(node.speed == 6 && !node.hasActions)
     }
 
+    @Test func childActionLooksUpAtPlaybackAndRunsIndependently() {
+        let scene = Scene(size: [100, 100])
+        let target = Node()
+        target.name = "before"
+        scene.addChild(target)
+        scene.run(.sequence([
+            .wait(for: .seconds(1)),
+            .run(.move(by: [10, 0], duration: .seconds(1)), onChildWithName: "target")
+        ]))
+        scene.advance(by: .milliseconds(500))
+        target.name = "target"
+        scene.advance(by: .milliseconds(500))
+        #expect(!scene.hasActions && target.hasActions)
+        scene.removeAllActions()
+        scene.advance(by: .seconds(1))
+        #expect(target.position.x == 10 && !target.hasActions)
+        scene.run(.run(.move(by: [100, 0], duration: .zero), onChildWithName: "absent"))
+        scene.advance(by: .milliseconds(1))
+        #expect(!scene.hasActions && target.position.x == 10)
+    }
+
     @Test func relativeResizeComposesAndIgnoresPlainNodes() {
         let scene = Scene(size: [200, 100])
         let sprite = Sprite(color: .white, size: [20, 30])
