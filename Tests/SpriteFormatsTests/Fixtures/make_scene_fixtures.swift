@@ -64,3 +64,87 @@ let binary = try PropertyListSerialization.data(fromPropertyList: plist, format:
 try binary.write(to: directory.appendingPathComponent("scene.sks"))
 let xml = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
 try xml.write(to: directory.appendingPathComponent("scene.xml"))
+
+
+// Physics fixture has no external resources; values exercise units, masks and body behavior.
+let physicsScene = SKScene(size: CGSize(width: 640, height: 480))
+physicsScene.physicsWorld.gravity = CGVector(dx: 2, dy: -4)
+physicsScene.physicsWorld.speed = 0.5
+let polygon = CGMutablePath()
+polygon.move(to: CGPoint(x: -10, y: -10))
+polygon.addLine(to: CGPoint(x: 20, y: -10))
+polygon.addLine(to: CGPoint(x: 0, y: 20))
+polygon.closeSubpath()
+let physicsBodies: [(String, SKPhysicsBody)] = [
+    ("circle", SKPhysicsBody(circleOfRadius: 12, center: CGPoint(x: 2, y: 3))),
+    ("rectangle", SKPhysicsBody(rectangleOf: CGSize(width: 30, height: 20), center: CGPoint(x: 4, y: 5))),
+    ("polygon", SKPhysicsBody(polygonFrom: polygon))
+]
+for (index, entry) in physicsBodies.enumerated() {
+    let node = SKNode()
+    node.name = entry.0
+    node.position = CGPoint(x: index * 100, y: 200)
+    let body = entry.1
+    body.mass = 2
+    body.friction = 0.3
+    body.restitution = 0.4
+    body.linearDamping = 0.2
+    body.angularDamping = 0.6
+    body.velocity = CGVector(dx: 7, dy: 8)
+    body.angularVelocity = 0.7
+    body.categoryBitMask = 0x80000001
+    body.collisionBitMask = 3
+    body.contactTestBitMask = 4
+    body.allowsRotation = false
+    body.affectedByGravity = index == 0
+    body.isDynamic = index != 2
+    node.physicsBody = body
+    physicsScene.addChild(node)
+    // Attaching an offset body can change its center-of-mass velocity. Set the archived
+    // velocity after attachment so the fixture has a stable, explicit expectation.
+    body.velocity = CGVector(dx: 7, dy: 8)
+}
+let physicsData = try NSKeyedArchiver.archivedData(withRootObject: physicsScene, requiringSecureCoding: true)
+try physicsData.write(to: directory.appendingPathComponent("physics.sks"))
+let physicsPlist = try PropertyListSerialization.propertyList(from: physicsData, options: [], format: nil)
+try PropertyListSerialization.data(fromPropertyList: physicsPlist, format: .xml, options: 0)
+    .write(to: directory.appendingPathComponent("physics.xml"))
+
+
+let actionScene = SKScene(size: CGSize(width: 320, height: 240))
+let actionCases: [(String, SKAction)] = [
+    ("move", .moveBy(x: 12, y: 24, duration: 2)),
+    ("moveTo", .move(to: CGPoint(x: 20, y: 30), duration: 2)),
+    ("moveX", .moveTo(x: 16, duration: 2)),
+    ("rotate", .rotate(byAngle: 1, duration: 2)),
+    ("rotateTo", .rotate(toAngle: 2, duration: 2, shortestUnitArc: true)),
+    ("scale", .scale(to: 2, duration: 2)),
+    ("scaleBy", .scale(by: 3, duration: 2)),
+    ("fade", .fadeAlpha(to: 0.2, duration: 2)),
+    ("wait", .wait(forDuration: 2)),
+    ("sequence", .sequence([.moveBy(x: 10, y: 0, duration: 1), .moveBy(x: 0, y: 10, duration: 1)])),
+    ("group", .group([.moveBy(x: 10, y: 20, duration: 2), .fadeOut(withDuration: 2)])),
+    ("repeat", .repeat(.moveBy(x: 10, y: 0, duration: 1), count: 3)),
+    ("forever", .repeatForever(.moveBy(x: 10, y: 0, duration: 1))),
+    ("remove", .sequence([.wait(forDuration: 1), .removeFromParent()])),
+    ("hide", .hide()),
+    ("unhide", .unhide())
+]
+for (name, action) in actionCases {
+    let node = SKNode()
+    node.name = name
+    node.isHidden = name == "unhide"
+    node.run(action, withKey: "animation")
+    actionScene.addChild(node)
+}
+let unkeyed = SKNode()
+unkeyed.name = "unkeyed"
+let eased = SKAction.moveBy(x: 20, y: 0, duration: 2)
+eased.timingMode = .easeIn
+unkeyed.run(eased)
+actionScene.addChild(unkeyed)
+let actionData = try NSKeyedArchiver.archivedData(withRootObject: actionScene, requiringSecureCoding: true)
+try actionData.write(to: directory.appendingPathComponent("actions.sks"))
+let actionPlist = try PropertyListSerialization.propertyList(from: actionData, options: [], format: nil)
+try PropertyListSerialization.data(fromPropertyList: actionPlist, format: .xml, options: 0)
+    .write(to: directory.appendingPathComponent("actions.xml"))

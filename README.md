@@ -147,9 +147,36 @@ Returned textures remain owned by the application's backend.
 
 This is an initial archive subset tested against fixtures generated with macOS SpriteKit,
 not a guarantee of compatibility with every Xcode editor or OS archive version.
-Custom/unknown node classes, physics bodies, actions, constraints, effects, lighting,
+Custom/unknown node classes, constraints, effects, lighting,
 attributed labels, embedded image data, and rotated/trimmed textures are unsupported.
-Scene physics-world settings and user data are omitted with entries in `diagnostics`.
+User data is omitted with entries in `diagnostics`.
+Circle, rectangle, and convex counterclockwise polygon physics bodies are restored with
+local centers, mass, friction, restitution, damping, velocity, dynamic/gravity/rotation
+flags, and all 32 bits of collision/contact masks. Scene gravity and simulation speed
+are imported. SpriteKit density is converted from kilograms per square meter to the
+engine's per-square-point density using SpriteKit's 150 points per meter; gravity is
+converted to points per second squared using the same scale. Linear velocity remains
+in points per second. Imported scenes use the existing Box2D solver and fixed timestep;
+this does not promise identical SpriteKit simulation results.
+
+Edges, compound/texture-derived bodies, curved or nonconvex paths, joints, pinned bodies,
+precise collision detection, charged bodies, and physics bodies under scaled nodes are
+currently rejected. Field masks and internal collision skin radii are not imported;
+field nodes are unsupported and the engine uses its own collision geometry. Physics
+fixtures cover binary/XML decoding and simulation without requiring SpriteKit at test time.
+
+Archived actions support relative/absolute movement (including single-axis movement),
+Z rotation, two-axis scaling, fading, waits, hide/unhide, removal, sequences, groups,
+finite repeats, and repeat-forever. The ordered action list and keys are restored without
+duplicating keyed actions. Each `makeNode()` creates independent playback state, and
+standard timing modes use the engine's easing curves.
+
+Actions start from their archived descriptions. Reversed actions, detectable partially
+executed state, retimed composites, single-axis/size-based scaling, texture/color/resize
+animations, paths, sounds, callbacks, and custom classes are unsupported. Native fixtures
+do not encode action speed; omitted runtime state cannot be recovered. Node speed and
+pause settings still apply. This is not a snapshot/resume mechanism for running games.
+
 Other editor metadata is ignored. Binary UIDs are normalized through Foundation's XML
 serialization without using private UID APIs or instantiating archived classes.
 

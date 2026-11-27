@@ -69,12 +69,13 @@ let package = Package(
             dependencies: ["SpriteCore", "SpritePhysics"],
             swiftSettings: swiftSettings
         ),
-        // Asset codecs: PNG, texture atlases, sprite sheets, tile maps and scene archives.
+        // Asset codecs: PNG, texture atlases, sprite sheets, tile maps and scene archives with physics and actions.
         .target(
             name: "SpriteFormats",
             dependencies: [
                 "SpriteCore",
                 "SpriteGraph",
+                "SpritePhysics",
                 .product(name: "PNG", package: "swift-png"),
             ],
             swiftSettings: swiftSettings
@@ -104,7 +105,7 @@ let package = Package(
         ),
         .testTarget(
             name: "SpriteFormatsTests",
-            dependencies: ["SpriteFormats"],
+            dependencies: ["SpriteFormats", "SpriteGraph", "SpritePhysics"],
             resources: [
                 .copy("Fixtures"),
             ],

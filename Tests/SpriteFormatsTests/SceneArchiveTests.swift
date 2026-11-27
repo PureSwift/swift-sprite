@@ -44,7 +44,8 @@ import SpriteGraph
         #expect(fontNames == ["Menlo"])
         #expect(textureRequests == 1)
         #expect(!scene.makeFrame(viewportSize: [320, 240]).vertices.isEmpty)
-        #expect(archive.diagnostics.contains("Scene physics-world settings are not imported."))
+        #expect(abs(scene.physicsWorld.gravity.y + 1470) < 0.001)
+        #expect(scene.physicsWorld.speed == 1)
     }
 
     @MainActor @Test func missingResourcesFailExplicitly() throws {
@@ -89,8 +90,8 @@ import SpriteGraph
         }
     }
 
-    @Test func rejectsPhysicsAndActions() throws {
-        for key in ["_PKPhysicsBody", "_actions", "_shader"] {
+    @Test func rejectsShaders() throws {
+        for key in ["_shader"] {
             let data = try minimal([key: ["CF$UID": 3]], extra: [["unsupported": true]])
             #expect(throws: SceneArchiveError.unsupported("SKNode." + key)) {
                 try SpriteKitSceneArchive.decode(data)

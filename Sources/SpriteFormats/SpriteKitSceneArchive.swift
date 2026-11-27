@@ -49,11 +49,14 @@ public struct SpriteKitSceneArchive: Sendable {
         var vertical: Label.VerticalAlignment = .baseline
         var lineCount = 1
         var layoutWidth: Float = 0
+        var actions: [ArchiveNodeAction] = []
+        var physicsBody: ArchivePhysicsBody?
+        var physicsWorld: ArchivePhysicsWorld?
     }
 
     private let rootID: Int
     private let records: [Record]
-    /// Describes deliberately omitted metadata or scene-world state.
+    /// Describes deliberately omitted metadata.
     public let diagnostics: [String]
 
     public static func decode(at url: URL) async throws -> SpriteKitSceneArchive {
@@ -64,9 +67,11 @@ public struct SpriteKitSceneArchive: Sendable {
         let graph = try KeyedArchive(ArchivePropertyList.decode(data))
         var records: [Record] = []
         var seen = Set<Int>()
+        var seenBodies = Set<Int>()
+        var actionDecoder = ArchiveActionDecoder(graph: graph)
         var diagnostics: [String] = []
 
-        func visit(_ id: Int, depth: Int) throws {
+        func visit(_ id: Int, depth: Int, scaledAncestor: Bool = false) throws {
             guard depth < 128, seen.count < 100_000, seen.insert(id).inserted else {
                 throw SceneArchiveError.invalid("Cyclic, shared, or excessively deep node hierarchy")
             }
@@ -78,7 +83,7 @@ public struct SpriteKitSceneArchive: Sendable {
             if className == "SKScene", id != graph.rootID {
                 throw SceneArchiveError.invalid("A scene cannot be a child node")
             }
-            for key in ["_PKPhysicsBody", "_actions", "_keyedActions", "_constraints", "_reachConstraints",
+            for key in ["_constraints", "_reachConstraints",
                         "_shader", "_filter", "_normalTexture", "_warpGeometry", "_attributedText"] {
                 guard try graph.isEmpty(fields[key]) else {
                     throw SceneArchiveError.unsupported("\(className).\(key)")
@@ -98,9 +103,20 @@ public struct SpriteKitSceneArchive: Sendable {
                 diagnostics.append("Object \(id): userData is not imported.")
             }
             var record = Record(id: id, className: className)
+            record.actions = try actionDecoder.actions(fields)
+            if let body = fields["_PKPhysicsBody"], try !graph.isNull(body) {
+                guard seenBodies.insert(try graph.reference(body, field: "_PKPhysicsBody")).inserted else {
+                    throw SceneArchiveError.invalid("Physics body shared by multiple nodes")
+                }
+                record.physicsBody = try ArchivePhysicsBody(body, graph: graph)
+            }
             record.name = try graph.string(fields["_name"])
             record.position = try graph.vector(fields["_position"], default: .zero)
             record.scale = try Vector2(graph.number(fields["_xScale"], default: 1), graph.number(fields["_yScale"], default: 1))
+            let scaled = scaledAncestor || record.scale != .one
+            if record.physicsBody != nil, scaled {
+                throw SceneArchiveError.unsupported("Physics bodies under scaled nodes")
+            }
             record.rotation = try graph.number(fields["_zRotation"], default: 0)
             record.zPosition = try graph.number(fields["_zPosition"], default: 0)
             record.alpha = try graph.number(fields["_opacity"], default: 1)
@@ -124,8 +140,8 @@ public struct SpriteKitSceneArchive: Sendable {
                 if try !graph.isNull(fields["_camera"]) {
                     record.camera = try graph.reference(fields["_camera"], field: "_camera")
                 }
-                if try !graph.isNull(fields["_physicsWorld"]) {
-                    diagnostics.append("Scene physics-world settings are not imported.")
+                if let world = fields["_physicsWorld"], try !graph.isNull(world) {
+                    record.physicsWorld = try ArchivePhysicsWorld(world, graph: graph)
                 }
             case "SKSpriteNode":
                 record.size = try graph.rect(fields["_bounds"], default: .zero).size
@@ -197,7 +213,7 @@ public struct SpriteKitSceneArchive: Sendable {
             default: break
             }
             records.append(record)
-            for child in record.children { try visit(child, depth: depth + 1) }
+            for child in record.children { try visit(child, depth: depth + 1, scaledAncestor: scaled) }
         }
         try visit(graph.rootID, depth: 0)
         for record in records {
@@ -225,6 +241,10 @@ public struct SpriteKitSceneArchive: Sendable {
                 scene.scaleMode = record.scaleMode
                 scene.anchorPoint = record.anchor
                 scene.backgroundColor = record.color
+                if let world = record.physicsWorld {
+                    scene.physicsWorld.gravity = world.gravity
+                    scene.physicsWorld.speed = world.speed
+                }
                 node = scene
             case "SKSpriteNode":
                 var texture: Texture?
@@ -270,6 +290,8 @@ public struct SpriteKitSceneArchive: Sendable {
             node.isHidden = record.hidden
             node.isPaused = record.paused
             node.speed = record.speed
+            node.physicsBody = record.physicsBody?.makeBody()
+            for action in record.actions { node.run(action.action, withKey: action.key) }
             nodes[record.id] = node
         }
         for record in records {
