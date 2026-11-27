@@ -364,3 +364,23 @@ for (name, root) in [("references", referenceScene), ("reference-target", refere
             .write(to: directory.appendingPathComponent(name + "." + suffix))
     }
 }
+
+// Set duration explicitly so generation does not depend on a bundled audio asset.
+let waitingSound = SKAction.playSoundFileNamed("beep.wav", waitForCompletion: true)
+waitingSound.duration = 0.25
+let immediateSound = SKAction.playSoundFileNamed("beep.wav", waitForCompletion: false)
+let soundScene = SKScene(size: CGSize(width: 100, height: 100))
+for (name, action) in [("waiting", waitingSound), ("immediate", immediateSound)] {
+    let node = SKNode()
+    node.name = name
+    node.run(SKAction.sequence([action, SKAction.moveBy(x: 10, y: 0, duration: 0.25)]), withKey: "sound")
+    soundScene.addChild(node)
+}
+for (name, root): (String, Any) in [("sound-actions", soundScene),
+    ("sound-library", ["actions": ["Beep": SKAction.repeat(waitingSound, count: 2)]])] {
+    let archive = try tilePlist(root)
+    for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+        try PropertyListSerialization.data(fromPropertyList: archive, format: format, options: 0)
+            .write(to: directory.appendingPathComponent(name + "." + suffix))
+    }
+}
