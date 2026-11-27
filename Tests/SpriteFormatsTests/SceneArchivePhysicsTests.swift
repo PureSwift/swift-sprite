@@ -157,7 +157,7 @@ import SpritePhysics
             ["_radius": 0], ["_radius": -1], ["density": -1], ["density": Double.infinity],
             ["linearDamping": -1], ["restitution": 2], ["categoryBitMask": 1.5],
             ["categoryBitMask": 4_294_967_296.0], ["linearVelocity": "{nan, 0}"],
-            ["_p0": ["TestUID": 99999]]
+            ["_p0": ["TestUID": 99999]], ["pinned": "yes"]
         ] {
             let data = try mutated("PKPhysicsBody", changes: changes)
             #expect(throws: SceneArchiveError.self) { try SpriteKitSceneArchive.decode(data) }
@@ -175,8 +175,24 @@ import SpritePhysics
         #expect(throws: SceneArchiveError.self) { try SpriteKitSceneArchive.decode(invalid) }
     }
 
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresPinnedBody(format: String) throws {
+        let data = try Data(contentsOf: Fixtures.url("SceneArchives/pinned-physics." + format))
+        let archive = try SpriteKitSceneArchive.decode(data)
+        let scene = try #require(archive.makeNode() as? Scene)
+        let node = scene.children[0]
+        let body = try #require(node.physicsBody)
+        #expect(body.isPinned && body.isDynamic)
+        for _ in 0..<30 { scene.advance(by: .seconds(1.0 / 60)) }
+        #expect(abs(node.position.x - 100) < 0.1 && abs(node.position.y - 200) < 0.1)
+        #expect(abs(node.zRotation) > 0.01)
+        let other = try archive.makeNode()
+        #expect(other.children[0].physicsBody !== body)
+        #expect(other.children[0].position == [100, 200])
+    }
+
     @Test func rejectsUnsupportedPhysics() throws {
-        for changes: [String: Any] in [["_shapeType": 99], ["pinned": true],
+        for changes: [String: Any] in [["_shapeType": 99],
             ["charge": 1]] {
             let data = try mutated("PKPhysicsBody", changes: changes)
             #expect(throws: SceneArchiveError.self) { try SpriteKitSceneArchive.decode(data) }
