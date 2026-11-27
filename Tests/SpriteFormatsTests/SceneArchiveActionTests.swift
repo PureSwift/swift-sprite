@@ -6,6 +6,63 @@ import SpriteGraph
 
 @Suite struct SceneArchiveActionTests {
     @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresTextureAnimations(format: String) throws {
+        let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/texture-actions." + format)))
+        #expect(throws: SceneArchiveError.self) { try archive.makeNode() }
+        var requests = 0
+        let scene = try #require(archive.makeNode(textureResolver: { _ in
+            requests += 1
+            return Texture(id: TextureID(rawValue: 3), textureSize: [80, 40])
+        }) as? Scene)
+        #expect(requests == 1)
+        let once = try #require(scene.children.first { $0.name == "once" } as? Sprite)
+        let restore = try #require(scene.children.first { $0.name == "restore" } as? Sprite)
+        let loop = try #require(scene.children.first { $0.name == "loop" } as? Sprite)
+        let fixed = try #require(scene.children.first { $0.name == "fixed" } as? Sprite)
+        #expect(once.size == [12, 8])
+        scene.advance(by: .milliseconds(375))
+        #expect(once.texture?.size == [40, 40] && once.size == [40, 40])
+        #expect(loop.texture?.size == [80, 40])
+        #expect(fixed.size == [12, 8] && fixed.texture?.size == [40, 40])
+        scene.isPaused = true
+        scene.advance(by: .seconds(1))
+        #expect(once.texture?.size == [40, 40])
+        scene.isPaused = false
+        scene.advance(by: .milliseconds(250))
+        #expect(once.texture?.size == [80, 40] && once.size == [80, 40])
+        #expect(loop.texture?.size == [40, 40])
+        scene.advance(by: .milliseconds(125))
+        #expect(!once.hasActions && !restore.hasActions && loop.hasActions)
+        #expect(restore.texture?.size == [20, 40] && restore.size == [20, 40])
+        #expect(once.texture?.size == [80, 40])
+        let fresh = try #require(archive.makeNode(textureResolver: { _ in
+            Texture(id: TextureID(rawValue: 4), textureSize: [80, 40])
+        }) as? Scene)
+        #expect((fresh.children.first as? Sprite)?.size == [12, 8])
+    }
+
+    @Test func rejectsMalformedTextureAnimations() throws {
+        let graph = try KeyedArchive(ArchivePropertyList.decode(Data(contentsOf: Fixtures.url("SceneArchives/texture-actions.sks"))))
+        let id = try #require(graph.objects.firstIndex { value in
+            guard let fields = value.dictionary else { return false }
+            return (try? graph.className(fields)) == "SKAnimate"
+        })
+        for changes: [String: PropertyValue] in [
+            ["_textures": .array([])], ["_timePerFrame": .number(0)],
+            ["_timePerFrame": .number(-1)], ["_timePerFrame": .number(.infinity)],
+            ["_duration": .number(99)], ["_finished": .bool(true)],
+            ["_textures": .array(Array(repeating: .uid(0), count: 4097))]
+        ] {
+            var objects = graph.objects
+            objects[id] = .dictionary(try graph.dictionary(.uid(id)).merging(changes) { _, new in new })
+            let modified = try KeyedArchive(.dictionary(["$archiver": .string("NSKeyedArchiver"),
+                "$version": .number(100_000), "$top": .dictionary(["root": .uid(graph.rootID)]), "$objects": .array(objects)]))
+            var decoder = ArchiveActionDecoder(graph: modified)
+            #expect(throws: SceneArchiveError.self) { try decoder.actions(["_actions": .array([.uid(id)])]) }
+        }
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
     func restoresAndRunsNativeActions(format: String) throws {
         let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/actions." + format)))
         let scene = try #require(archive.makeNode() as? Scene)
