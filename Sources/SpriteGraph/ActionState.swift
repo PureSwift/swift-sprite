@@ -13,6 +13,12 @@ protocol ActionState: AnyObject {
     ///
     /// - Returns: Unused seconds once the action completes, or `nil` while still running.
     func advance(_ node: Node, by dt: Double) -> Double?
+
+    func cancel(_ node: Node)
+}
+
+extension ActionState {
+    func cancel(_ node: Node) { }
 }
 
 /// Tolerance for floating point accumulation when deciding completion.
@@ -90,18 +96,7 @@ extension Action {
                 }
             }
         case let .animate(textures, resize, restore):
-            return interpolating(from: { ($0 as? Sprite)?.texture }) { node, original, t in
-                guard let sprite = node as? Sprite, !textures.isEmpty else { return }
-                let texture: Texture? = if t >= 1, restore {
-                    original
-                } else {
-                    textures[min(Int(t * Float(textures.count)), textures.count - 1)]
-                }
-                sprite.texture = texture
-                if resize, let texture {
-                    sprite.size = texture.size
-                }
-            }
+            return TextureAnimationState(textures: textures, seconds: seconds, resize: resize, restore: restore)
         case let .setTexture(texture, resize):
             return instant { node in
                 guard let sprite = node as? Sprite else { return }
@@ -163,6 +158,51 @@ extension Action {
 
 // MARK: - States
 
+/// Captures the original texture only when playback actually starts.
+@MainActor
+final class TextureAnimationState: ActionState {
+    private let textures: [Texture]
+    private let seconds: Double
+    private let resize: Bool
+    private let restore: Bool
+    private var original: Texture?
+    private var started = false
+    private var finished = false
+    private var elapsed: Double = 0
+
+    init(textures: [Texture], seconds: Double, resize: Bool, restore: Bool) {
+        self.textures = textures
+        self.seconds = seconds
+        self.resize = resize
+        self.restore = restore
+    }
+
+    private func apply(_ texture: Texture?, to sprite: Sprite) {
+        sprite.texture = texture
+        if resize, let texture { sprite.size = texture.size }
+    }
+
+    func advance(_ node: Node, by dt: Double) -> Double? {
+        guard !finished else { return dt }
+        elapsed += dt
+        let complete = elapsed >= seconds - epsilon
+        if let sprite = node as? Sprite, !textures.isEmpty {
+            if !started { original = sprite.texture; started = true }
+            let progress = seconds > 0 ? min(elapsed / seconds, 1) : 1
+            let frame = min(Int(progress * Double(textures.count)), textures.count - 1)
+            apply(complete && restore ? original : textures[frame], to: sprite)
+        }
+        finished = complete
+        return complete ? max(elapsed - seconds, 0) : nil
+    }
+
+    func cancel(_ node: Node) {
+        guard !finished else { return }
+        finished = true
+        if started, restore, let sprite = node as? Sprite { apply(original, to: sprite) }
+    }
+}
+
 /// Leaf action interpolating progress `0...1` over a fixed duration.
 @MainActor
 final class IntervalState: ActionState {
@@ -201,9 +241,17 @@ final class SequenceState: ActionState {
         self.actions = actions
     }
 
+    private var cancelled = false
+
+    func cancel(_ node: Node) {
+        cancelled = true
+        current?.cancel(node)
+    }
+
     func advance(_ node: Node, by dt: Double) -> Double? {
+        guard !cancelled else { return nil }
         var remaining = dt
-        while index < actions.count {
+        while !cancelled, index < actions.count {
             let state = current ?? actions[index].makeState()
             current = state
             guard let leftover = state.advance(node, by: remaining) else { return nil }
@@ -227,9 +275,18 @@ final class GroupState: ActionState {
         self.finished = Array(repeating: false, count: actions.count)
     }
 
+    private var cancelled = false
+
+    func cancel(_ node: Node) {
+        cancelled = true
+        for index in states.indices where !finished[index] { states[index].cancel(node) }
+    }
+
     func advance(_ node: Node, by dt: Double) -> Double? {
+        guard !cancelled else { return nil }
         var leftover = dt
         for index in states.indices where !finished[index] {
+            guard !cancelled else { return nil }
             if let remaining = states[index].advance(node, by: dt) {
                 finished[index] = true
                 leftover = min(leftover, remaining)
@@ -253,9 +310,17 @@ final class RepeatState: ActionState {
         self.count = count
     }
 
+    private var cancelled = false
+
+    func cancel(_ node: Node) {
+        cancelled = true
+        current?.cancel(node)
+    }
+
     func advance(_ node: Node, by dt: Double) -> Double? {
+        guard !cancelled else { return nil }
         var remaining = dt
-        while count.map({ iteration < $0 }) ?? true {
+        while !cancelled, count.map({ iteration < $0 }) ?? true {
             let state = current ?? action.makeState()
             current = state
             guard let leftover = state.advance(node, by: remaining) else { return nil }
@@ -286,6 +351,8 @@ final class ModifiedState: ActionState {
         self.speed = speed
         self.timingMode = timingMode
     }
+
+    func cancel(_ node: Node) { base.cancel(node) }
 
     func advance(_ node: Node, by dt: Double) -> Double? {
         guard speed > 0 else { return nil }
