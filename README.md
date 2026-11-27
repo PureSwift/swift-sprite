@@ -187,7 +187,11 @@ Linear, clamped color keyframes support archived `NSColor` RGB and grayscale val
 including alpha. The importer uses the stored RGB/white fallback directly; custom ICC
 profiles are not color-managed. Other color classes and color spaces are unsupported.
 
-Per-channel color ranges/speeds, animated color blending, particle
+Starting color-blend variance is supported: each particle samples the base factor
+plus a random offset within half the range, then clamps it to `0...1`. The sampled
+factor stays fixed for its lifetime; changes to the emitter affect future particles.
+
+Per-channel color ranges/speeds, color-blend speeds/sequences, particle
 actions, speed/rotation keyframes, fields, emission distance, and Z ranges/speeds are
 currently unsupported. Imported emitters start with no live particles and retain the
 engine's 10,000-live-particle cap; simulation is not intended to reproduce SpriteKit's
