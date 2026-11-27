@@ -479,6 +479,42 @@ import SpriteGraph
         }
     }
 
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresReversedScalingAndCompositeOrder(format: String) throws {
+        let scene = try #require(SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/reversed-scale-actions." + format))).makeNode() as? Scene)
+        #expect(scene.children.count == 3)
+        scene.advance(by: .seconds(1))
+        #expect(scene.children.map(\.scale) == [[1.5, 2.5], [1.5, 2.5], [1.5, 2.5]])
+        #expect(scene.children.map(\.position) == [[0, 0], [0, 0], [-5, 0]])
+        scene.advance(by: .seconds(1))
+        #expect(scene.children.map(\.scale) == [[1, 1], [1, 1], [1, 1]])
+        #expect(scene.children.map(\.position) == [[0, 0], [0, 0], [-10, 0]])
+        scene.advance(by: .seconds(2))
+        #expect(scene.children.map(\.scale) == [[2, 4], [1, 1], [1, 1]])
+        #expect(scene.children.map(\.position) == [[0, 0], [-10, 0], [-10, 0]])
+        #expect(scene.children.allSatisfy { !$0.hasActions })
+    }
+
+    @Test func rejectsMalformedReversedScaling() throws {
+        let valid: [String: PropertyValue] = [
+            "_isReversed": .bool(true), "_isRelative": .bool(true),
+            "_useX": .bool(true), "_useY": .bool(true),
+            "_scaleTargetX": .number(0.5), "_scaleTargetY": .number(0.25)
+        ]
+        for changes: [String: PropertyValue] in [
+            ["_isRelative": .bool(false)], ["_useX": .bool(false)],
+            ["_isTargetSizeBased": .bool(true)],
+            ["_scaleTargetX": .number(.infinity)], ["_scaleTargetY": .number(.nan)],
+            ["_deltaScaleX": .number(1)], ["_deltaScaleY": .number(1)]
+        ] {
+            let (graph, node) = try archive(actionFields: valid.merging(changes) { _, new in new },
+                className: "SKScale")
+            var decoder = ArchiveActionDecoder(graph: graph)
+            #expect(throws: SceneArchiveError.self) { try decoder.actions(node) }
+        }
+    }
+
     @Test func rejectsInvalidScaleActions() throws {
         for fields: [String: PropertyValue] in [
             ["_useX": .bool(false), "_useY": .bool(false)],
