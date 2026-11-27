@@ -5,6 +5,21 @@ import SpriteGraph
 @testable import SpriteFormats
 
 @Suite struct SceneArchiveEmitterTests {
+    @MainActor @Test func restoresBlendVariance() throws {
+        let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/emitter-blend.sks")))
+        let emitter = try #require(archive.makeNode() as? ParticleEmitter)
+        #expect(emitter.particleColorBlendFactor == 1)
+        #expect(emitter.particleColorBlendFactorRange == 1)
+        let scene = Scene(size: [100, 100])
+        scene.addChild(emitter)
+        scene.advance(by: .seconds(1))
+        let frame = scene.makeFrame(viewportSize: [100, 100])
+        let color = try #require(frame.vertices.first?.color)
+        #expect(color.red == 1 && color.alpha == 1)
+        #expect((0 ... 0.5).contains(color.green) && color.green == color.blue)
+        #expect(scene.makeFrame(viewportSize: [100, 100]).vertices == frame.vertices)
+    }
+
     @MainActor @Test(arguments: ["sks", "xml"])
     func restoresColorKeyframes(format: String) throws {
         let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/emitter-colors." + format)))
@@ -111,6 +126,7 @@ import SpriteGraph
     @Test func rejectsMalformedEmitterValues() throws {
         let graph = try graph()
         for fields: [String: PropertyValue] in [["_birthrate": .number(-1)], ["_birthrate": .number(.infinity)],
+            ["_startColorBlendVariance": .number(-1)], ["_startColorBlendVariance": .number(.nan)],
             ["_numParticlesToEmit": .number(1.5)], ["_numParticlesToEmit": .number(-1)],
             ["_startSpeedVariance": .number(-1)], ["_startSize": .string("{-1, 3}")],
             ["_startPositionVariance": .string("{nan, 0}")]] {
