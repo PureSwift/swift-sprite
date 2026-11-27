@@ -591,3 +591,22 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: reversedArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("reversed-actions." + suffix))
 }
+
+let reversedScaleScene = SKScene(size: CGSize(width: 100, height: 100))
+let relativeScale = SKAction.scaleX(by: 2, y: 4, duration: 2)
+for action in [
+    SKAction.sequence([relativeScale.reversed(), relativeScale]),
+    SKAction.sequence([.moveBy(x: 10, y: 0, duration: 2), relativeScale]).reversed(),
+    SKAction.group([.moveBy(x: 10, y: 0, duration: 2), relativeScale]).reversed()
+] {
+    let node = SKNode()
+    node.xScale = 2
+    node.yScale = 4
+    node.run(action, withKey: "reversed-scale")
+    reversedScaleScene.addChild(node)
+}
+let reversedScaleArchive = try tilePlist(reversedScaleScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: reversedScaleArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("reversed-scale-actions." + suffix))
+}
