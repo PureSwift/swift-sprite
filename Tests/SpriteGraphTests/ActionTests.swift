@@ -102,6 +102,30 @@ import SpriteCore
         #expect(target.position.x == 10 && !scene.hasActions)
     }
 
+    @Test func rootChildPathUsesCurrentTreeAfterReparenting() {
+        let oldScene = Scene(size: [100, 100])
+        let newScene = Scene(size: [100, 100])
+        let caller = Node()
+        let oldTarget = Node()
+        let newTarget = Node()
+        oldTarget.name = "target"
+        newTarget.name = "target"
+        oldScene.addChild(caller)
+        oldScene.addChild(oldTarget)
+        newScene.addChild(newTarget)
+        caller.run(.sequence([
+            .wait(for: .seconds(1)),
+            .run(.move(by: [10, 0], duration: .zero), onChildWithName: "/target")
+        ]))
+        oldScene.advance(by: .milliseconds(500))
+        caller.removeFromParent()
+        newScene.addChild(caller)
+        newScene.advance(by: .milliseconds(500))
+        newScene.advance(by: .milliseconds(1))
+        #expect(newTarget.position.x == 10 && oldTarget.position == .zero)
+        #expect(!caller.hasActions)
+    }
+
     @Test func relativeResizeComposesAndIgnoresPlainNodes() {
         let scene = Scene(size: [200, 100])
         let sprite = Sprite(color: .white, size: [20, 30])
