@@ -78,6 +78,35 @@ import SpritePhysics
         #expect(platform.position == [300, 100])
     }
 
+    @Test func pinnedNodeFollowsExplicitParentTransforms() {
+        let scene = Scene(size: [400, 400])
+        let parent = Node()
+        parent.position = [100, 100]
+        let child = Node()
+        child.position = [30, 0]
+        let body = PhysicsBody(circleOfRadius: 5)
+        body.isPinned = true
+        child.physicsBody = body
+        parent.addChild(child)
+        scene.addChild(parent)
+        step(scene, seconds: 0.5)
+        #expect(approx(child.position, [30, 0], tolerance: 0.1))
+        parent.position = [200, 200]
+        parent.zRotation = .pi / 2
+        step(scene, seconds: 0.5)
+        #expect(approx(body.position, [200, 230], tolerance: 0.1))
+        #expect(approx(child.position, [30, 0], tolerance: 0.1))
+        child.removeFromParent()
+        step(scene, seconds: 1.0 / 60)
+        #expect(body.world == nil)
+        parent.addChild(child)
+        step(scene, seconds: 0.5)
+        #expect(approx(body.position, [200, 230], tolerance: 0.1))
+        body.isPinned = false
+        step(scene, seconds: 0.5)
+        #expect(body.position.y < 200)
+    }
+
     @Test func removedNodesLeaveTheWorld() {
         let scene = Scene(size: [400, 400])
         let node = Node()
