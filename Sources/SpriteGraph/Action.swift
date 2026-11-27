@@ -159,6 +159,16 @@ public extension Action {
     static func scale(to value: Vector2, duration: Duration) -> Action {
         Action(.scaleTo(x: value.x, y: value.y), duration: duration)
     }
+
+    /// Animates only the horizontal scale, leaving vertical scale untouched.
+    static func scaleTo(x: Float, duration: Duration) -> Action {
+        Action(.scaleTo(x: x, y: nil), duration: duration)
+    }
+
+    /// Animates only the vertical scale, leaving horizontal scale untouched.
+    static func scaleTo(y: Float, duration: Duration) -> Action {
+        Action(.scaleTo(x: nil, y: y), duration: duration)
+    }
 }
 
 // MARK: - Appearance
