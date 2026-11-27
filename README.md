@@ -378,7 +378,8 @@ The script uses SDL's dummy video driver and software renderer, requires clean e
 and completed frames for successful loads, and treats timeouts as failures. Its 18
 checks cover custom classes, references, source/compiled atlases, physics fixtures,
 and invalid options or resources. Temporary derived archives stay outside the repository.
-The `Viewer smoke tests` workflow builds and runs these checks on pushes and pull requests.
+The `Viewer smoke tests` workflow builds the viewer, runs the full Swift test suite,
+and runs these checks on pushes and pull requests.
 
 ### Tutorial compatibility assets
 
