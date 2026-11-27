@@ -627,3 +627,19 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: reversedSpeedArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("reversed-speed-actions." + suffix))
 }
+
+let childActionScene = SKScene(size: CGSize(width: 100, height: 100))
+let childActionTarget = SKSpriteNode(color: .white, size: CGSize(width: 12, height: 8))
+childActionTarget.name = "target"
+childActionScene.addChild(childActionTarget)
+childActionScene.run(.sequence([
+    .wait(forDuration: 0.5),
+    .run(.group([.moveBy(x: 10, y: 0, duration: 1), .setTexture(croppedTile, resize: true)]), onChildWithName: "target"),
+    .moveBy(x: 1, y: 0, duration: 0),
+    .run(.moveBy(x: 100, y: 0, duration: 0), onChildWithName: "missing")
+]), withKey: "dispatch")
+let childActionArchive = try tilePlist(childActionScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: childActionArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("child-actions." + suffix))
+}
