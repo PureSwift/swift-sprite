@@ -135,7 +135,7 @@ let root = try archive.makeNode(
 ```
 
 Foundation's `PropertyListSerialization` reads binary and XML keyed archives.
-The loader maps `SKScene`, `SKNode`, `SKSpriteNode`, `SKCameraNode`, and `SKLabelNode`
+The loader maps `SKScene`, `SKNode`, `SKSpriteNode`, `SKCameraNode`, `SKLabelNode`, and `SKEmitterNode`
 to engine nodes, preserving child order, transforms, opacity, visibility, scene settings,
 camera identity, sprite geometry/tint, and label layout. A root `Scene` can be presented
 directly; other root nodes can be attached to an existing scene.
@@ -176,6 +176,18 @@ executed state, retimed composites, single-axis/size-based scaling, texture/colo
 animations, paths, sounds, callbacks, and custom classes are unsupported. Native fixtures
 do not encode action speed; omitted runtime state cannot be recovered. Node speed and
 pause settings still apply. This is not a snapshot/resume mechanism for running games.
+
+Particle emitters restore birth rate/count, lifetime, spawn position/range, speed and
+emission angle, acceleration, rotation, scale, opacity, color/blend factor, size, blend
+mode, and particle Z position. Named particle textures use the same cached resolver as
+sprites. Targets must reference a node in the imported tree. Alpha/scale keyframes
+support linear interpolation with clamping. Standalone emitter archives are supported.
+
+Color keyframes, per-channel color ranges/speeds, animated color blending, particle
+actions, speed/rotation keyframes, fields, emission distance, and Z ranges/speeds are
+currently unsupported. Imported emitters start with no live particles and retain the
+engine's 10,000-live-particle cap; simulation is not intended to reproduce SpriteKit's
+random particle stream exactly.
 
 Other editor metadata is ignored. Binary UIDs are normalized through Foundation's XML
 serialization without using private UID APIs or instantiating archived classes.
