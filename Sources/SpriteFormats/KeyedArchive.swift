@@ -147,6 +147,7 @@ struct KeyedArchive: Sendable {
         case 0: return .alpha
         case 1: return .add
         case 3: return .multiply
+        case 5: return .screen
         case 6: return .replace
         default: throw SceneArchiveError.unsupported("Blend mode")
         }
