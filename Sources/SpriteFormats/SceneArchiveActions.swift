@@ -214,11 +214,22 @@ struct ArchiveActionDecoder {
             action = try flag("_isRelative") ? .rotate(by: angle, duration: duration)
                 : .rotate(to: angle, duration: duration, shortestUnitArc: flag("_isUnitArc"))
         case "SKScale":
-            guard try flag("_useX"), try flag("_useY"), try !flag("_isTargetSizeBased") else {
-                throw SceneArchiveError.unsupported("Single-axis or size-based scale action")
+            guard try !flag("_isTargetSizeBased") else {
+                throw SceneArchiveError.unsupported("Size-based scale action")
             }
+            let useX = try flag("_useX"), useY = try flag("_useY")
+            guard useX || useY else { throw SceneArchiveError.invalid("Scale action without axes") }
             let target = try Vector2(number("_scaleTargetX"), number("_scaleTargetY"))
-            action = try flag("_isRelative") ? .scale(by: target, duration: duration) : .scale(to: target, duration: duration)
+            if try flag("_isRelative") {
+                guard useX && useY else {
+                    throw SceneArchiveError.unsupported("Single-axis relative scale action")
+                }
+                action = .scale(by: target, duration: duration)
+            } else if useX && useY {
+                action = .scale(to: target, duration: duration)
+            } else {
+                action = useX ? .scaleTo(x: target.x, duration: duration) : .scaleTo(y: target.y, duration: duration)
+            }
         case "SKFade":
             let alpha = try number("_alphaTarget")
             action = try flag("_isRelative") ? .fadeAlpha(by: alpha, duration: duration) : .fadeAlpha(to: alpha, duration: duration)
