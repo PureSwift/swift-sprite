@@ -72,7 +72,10 @@ public final class PhysicsBody {
     /// Dynamic bodies respond to forces and collisions; others are static obstacles
     /// that can still be repositioned directly.
     public var isDynamic: Bool {
-        didSet { bodyID.map { b2Body_SetType($0, bodyType) } }
+        didSet {
+            bodyID.map { b2Body_SetType($0, bodyType) }
+            if isDynamic != oldValue { updatePin() }
+        }
     }
 
     /// Enables Box2D bullet collision sweeps against non-bullet dynamic bodies.
@@ -80,6 +83,16 @@ public final class PhysicsBody {
     /// are not covered, and this does not guarantee identical SpriteKit timing.
     public var usesContinuousCollisionDetection = false {
         didSet { bodyID.map { b2Body_SetBullet($0, usesContinuousCollisionDetection) } }
+    }
+
+    /// Holds the body's origin at its current position while allowing rotation.
+    /// Assigning a new position moves the pivot. Scene nodes therefore follow
+    /// explicit parent transform changes; use a PinJoint to couple two dynamic bodies.
+    public var isPinned = false {
+        didSet {
+            guard isPinned != oldValue else { return }
+            updatePin()
+        }
     }
 
     public var affectedByGravity = true {
@@ -137,6 +150,8 @@ public final class PhysicsBody {
     private(set) var bodyID: b2BodyId?
 
     private(set) var shapeIDs: [b2ShapeId] = []
+
+    private var pinAnchorID: b2BodyId?
 
     // Detached state, used while the body is not in a world.
     private var storedPosition: Vector2
@@ -355,6 +370,7 @@ public final class PhysicsBody {
         definition.userData = Unmanaged.passUnretained(self).toOpaque()
         bodyID = b2CreateBody(worldID, &definition)
         createShapes()
+        updatePin()
     }
 
     /// Destroys the Box2D body (and its joints), keeping state for re-adding later.
@@ -364,9 +380,37 @@ public final class PhysicsBody {
         storedRotation = rotation
         storedVelocity = velocity
         storedAngularVelocity = angularVelocity
+        destroyPin()
         b2DestroyBody(bodyID)
         self.bodyID = nil
         shapeIDs = []
+    }
+
+    private func destroyPin() {
+        if let pinAnchorID {
+            // Destroying the anchor also destroys its revolute joint.
+            b2DestroyBody(pinAnchorID)
+            self.pinAnchorID = nil
+        }
+    }
+
+    private func updatePin() {
+        destroyPin()
+        guard let bodyID else { return }
+        b2Body_SetAwake(bodyID, true)
+        guard isPinned, isDynamic, area > 0 else { return }
+        let worldID = b2Body_GetWorld(bodyID)
+        var anchor = b2DefaultBodyDef()
+        anchor.position = b2Body_GetPosition(bodyID)
+        let anchorID = b2CreateBody(worldID, &anchor)
+        pinAnchorID = anchorID
+        var joint = b2DefaultRevoluteJointDef()
+        joint.base.bodyIdA = anchorID
+        joint.base.bodyIdB = bodyID
+        joint.base.localFrameA = b2Transform(p: b2Vec2(x: 0, y: 0), q: b2Rot(c: 1, s: 0))
+        joint.base.localFrameB = joint.base.localFrameA
+        _ = b2CreateRevoluteJoint(worldID, &joint)
+        b2Body_SetAwake(bodyID, true)
     }
 
     private func createShapes() {
@@ -393,6 +437,9 @@ public final class PhysicsBody {
     private func setTransform(position: Vector2, rotation: Float) {
         guard let bodyID else { return }
         b2Body_SetTransform(bodyID, b2Vec2(position), b2Rot(angle: rotation))
+        if let pinAnchorID {
+            b2Body_SetTransform(pinAnchorID, b2Vec2(position), b2Rot(c: 1, s: 0))
+        }
         if isDynamic {
             b2Body_SetAwake(bodyID, true)
         }
