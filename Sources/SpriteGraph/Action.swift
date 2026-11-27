@@ -53,6 +53,7 @@ public struct Action: Sendable {
         case scaleToSize(Vector2)
         case fade(by: Float)
         case fadeTo(Float)
+        case changeSpeed(Float, relative: Bool)
         case resize(width: Float?, height: Float?)
         case resizeBy(Vector2)
         case colorize(Color?, blendFactor: Float)
@@ -257,6 +258,17 @@ public extension Action {
 // MARK: - Control
 
 public extension Action {
+
+    /// Animates the node's playback speed to a nonnegative target.
+    /// The node's current speed also controls this action's progress.
+    static func changeSpeed(to value: Float, duration: Duration) -> Action {
+        Action(.changeSpeed(max(value, 0), relative: false), duration: duration)
+    }
+
+    /// Multiplies the node's speed at playback start by a nonnegative factor.
+    static func changeSpeed(by factor: Float, duration: Duration) -> Action {
+        Action(.changeSpeed(max(factor, 0), relative: true), duration: duration)
+    }
 
     static func wait(for duration: Duration) -> Action {
         Action(.wait, duration: duration)
