@@ -145,6 +145,24 @@ explicit errors. Texture references include image, atlas, subtexture, and filter
 Resolvers return the named image or atlas entry before the archive's unit-rectangle crop.
 Returned textures remain owned by the application's backend.
 
+Named `SKReferenceNode` instances use an explicit archive resolver:
+
+```swift
+let root = try archive.makeNode(
+    textureResolver: { textures[$0.imageName] },
+    referenceResolver: { archivesByReferenceName[$0] }
+)
+```
+
+`referenceNames` lists direct references. Names are passed through unchanged (some
+include `.sks`); the loader never opens referenced files automatically. Each instance
+gets independent nodes and actions. Referenced scene roots become plain nodes under
+the reference wrapper; their scene-only background, camera selection, and physics-world
+settings do not replace the containing scene's settings. Resource caches are shared
+across the expanded tree. Missing references, cycles, more than 31 nested reference
+levels, and expansions beyond 100,000 nodes throw errors. URL-based references and
+physics bodies under scaled reference hierarchies remain unsupported.
+
 This is an initial archive subset tested against fixtures generated with macOS SpriteKit,
 not a guarantee of compatibility with every Xcode editor or OS archive version.
 Custom/unknown node classes, constraints, effects, lighting,
