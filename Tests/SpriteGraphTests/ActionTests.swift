@@ -82,6 +82,26 @@ import SpriteCore
         #expect(!scene.hasActions && target.position.x == 10)
     }
 
+    @Test func childPathResolvesLateAndIgnoresMissingIntermediateNodes() {
+        let scene = Scene(size: [100, 100])
+        let container = Node()
+        container.name = "container"
+        scene.addChild(container)
+        scene.run(.sequence([
+            .wait(for: .seconds(1)),
+            .run(.move(by: [10, 0], duration: .zero), onChildWithName: "container/target")
+        ]))
+        scene.advance(by: .milliseconds(500))
+        let target = Node()
+        target.name = "target"
+        container.addChild(target)
+        scene.advance(by: .milliseconds(500))
+        #expect(target.position.x == 10)
+        scene.run(.run(.move(by: [100, 0], duration: .zero), onChildWithName: "absent/target"))
+        scene.advance(by: .milliseconds(1))
+        #expect(target.position.x == 10 && !scene.hasActions)
+    }
+
     @Test func relativeResizeComposesAndIgnoresPlainNodes() {
         let scene = Scene(size: [200, 100])
         let sprite = Sprite(color: .white, size: [20, 30])
