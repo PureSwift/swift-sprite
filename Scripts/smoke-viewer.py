@@ -33,12 +33,20 @@ def main():
                 raise RuntimeError(f'{label}: exit {result.returncode}\n{output}')
             passed += 1
             print(f'PASS: {label}')
+            return output
 
         def scene_options(path):
             return ['--sks', path, '--frames', '3']
 
         mappings = ['--class', 'FixtureGameScene=SKScene', '--class', 'FixtureGameSprite=SKSpriteNode']
         check('custom classes', scene_options(archives / 'custom-classes.sks') + mappings)
+        sound_options = scene_options(archives / 'sound-actions.sks')
+        check('sound requires explicit mute', sound_options, 'missingSound')
+        muted = check('muted sound actions', sound_options + ['--mute'])
+        if muted.count('Muted archived sound: beep.wav') != 1:
+            raise RuntimeError('Expected one diagnostic for the shared muted sound')
+        check('mute requires archive', ['--mute', '--frames', '3'], '--mute may be supplied once')
+        check('duplicate mute', sound_options + ['--mute', '--mute'], '--mute may be supplied once')
         check('unmapped class', scene_options(archives / 'custom-classes.sks'), 'Node class')
         check('duplicate mapping', scene_options(archives / 'custom-classes.sks') + mappings +
               ['--class', 'FixtureGameScene=SKNode'], 'Duplicate --class')
@@ -52,6 +60,11 @@ def main():
         shutil.copyfile(archives / 'references.sks', scene)
         shutil.copyfile(archives / 'custom-classes.sks', target)
         check('references with class mappings', scene_options(scene) + mappings)
+        shutil.copyfile(archives / 'sound-actions.sks', target)
+        muted = check('muted sound in shared references', scene_options(scene) + ['--mute'])
+        if muted.count('Muted archived sound: beep.wav') != 1:
+            raise RuntimeError('Referenced scenes must share the muted sound resolver cache')
+        shutil.copyfile(archives / 'custom-classes.sks', target)
         with scene.open('rb') as stream:
             reference_archive = plistlib.load(stream)
         reference_archive['$objects'] = [
