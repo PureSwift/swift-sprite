@@ -661,3 +661,20 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: childPathArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("child-path-actions." + suffix))
 }
+
+let rootPathScene = SKScene(size: CGSize(width: 100, height: 100))
+let rootPathCaller = SKNode()
+rootPathCaller.name = "caller"
+let localTarget = SKNode()
+localTarget.name = "target"
+rootPathCaller.addChild(localTarget)
+let rootTarget = SKNode()
+rootTarget.name = "target"
+rootPathScene.addChild(rootPathCaller)
+rootPathScene.addChild(rootTarget)
+rootPathCaller.run(.run(.moveBy(x: 10, y: 0, duration: 1), onChildWithName: "/target"))
+let rootPathArchive = try tilePlist(rootPathScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: rootPathArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("root-path-actions." + suffix))
+}
