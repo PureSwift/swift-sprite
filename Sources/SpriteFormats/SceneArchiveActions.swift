@@ -1,5 +1,69 @@
+import Foundation
 import SpriteCore
 import SpriteGraph
+
+/// Named action descriptions from SpriteKit editor `Actions.sks` libraries.
+public struct SpriteKitActionArchive: Sendable {
+    private let actions: [String: ArchiveAction]
+
+    public var actionNames: [String] { actions.keys.sorted() }
+
+    public static func decode(_ data: Data) throws -> SpriteKitActionArchive {
+        let graph = try KeyedArchive(ArchivePropertyList.decode(data))
+        func dictionary(_ value: PropertyValue) throws -> [String: PropertyValue] {
+            let fields = try graph.dictionary(value)
+            guard ["NSDictionary", "NSMutableDictionary"].contains(try graph.className(fields)) else {
+                throw SceneArchiveError.invalid("Expected action library dictionary")
+            }
+            let keys = try graph.array(fields["NS.keys"])
+            let values = try graph.array(fields["NS.objects"])
+            guard keys.count == values.count, keys.count <= 10_000 else {
+                throw SceneArchiveError.invalid("Invalid action library entry count")
+            }
+            var result: [String: PropertyValue] = [:]
+            for (key, value) in zip(keys, values) {
+                guard let name = try graph.string(key), !name.isEmpty, result[name] == nil else {
+                    throw SceneArchiveError.invalid("Duplicate or invalid action library name")
+                }
+                result[name] = value
+            }
+            return result
+        }
+        let root = try dictionary(.uid(graph.rootID))
+        guard let entries = root["actions"] else { throw SceneArchiveError.invalid("Missing action library entries") }
+        var decoder = ArchiveActionDecoder(graph: graph)
+        var actions: [String: ArchiveAction] = [:]
+        for (name, value) in try dictionary(entries) {
+            actions[name] = try decoder.decode(value)
+        }
+        return SpriteKitActionArchive(actions: actions)
+    }
+
+    public static func decode(at url: URL) async throws -> SpriteKitActionArchive {
+        try await Task.detached { try decode(Data(contentsOf: url)) }.value
+    }
+
+    /// Materializes an action with backend-owned textures; returns nil for an unknown name.
+    /// Resolution is cached within this call. Playback state is created when a node runs it.
+    @MainActor public func makeAction(named name: String,
+        textureResolver: (SpriteKitSceneArchive.TextureReference) throws -> Texture? = { _ in nil }
+    ) throws -> Action? {
+        guard let action = actions[name] else { return nil }
+        var textures: [SpriteKitSceneArchive.TextureReference: Texture] = [:]
+        return try action.makeAction { frame in
+            if textures[frame.reference] == nil {
+                guard let texture = try textureResolver(frame.reference) else {
+                    throw SceneArchiveError.missingTexture(frame.reference.imageName)
+                }
+                textures[frame.reference] = texture
+            }
+            guard let texture = textures[frame.reference] else {
+                throw SceneArchiveError.missingTexture(frame.reference.imageName)
+            }
+            return texture.subtexture(inUnitRect: frame.rect)
+        }
+    }
+}
 
 struct ArchiveNodeAction: Sendable {
     let action: ArchiveAction
@@ -82,7 +146,7 @@ struct ArchiveActionDecoder {
         return result
     }
 
-    private mutating func decode(_ value: PropertyValue) throws -> ArchiveAction {
+    mutating func decode(_ value: PropertyValue) throws -> ArchiveAction {
         let id = try graph.reference(value, field: "action")
         guard active.count < 64, budget > 0, active.insert(id).inserted else {
             throw SceneArchiveError.invalid("Cyclic or excessive action graph")
