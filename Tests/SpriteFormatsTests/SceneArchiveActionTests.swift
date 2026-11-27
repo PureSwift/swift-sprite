@@ -581,7 +581,7 @@ import SpriteGraph
         ]
         for changes: [String: PropertyValue] in [
             [:], ["_action": .null], ["_subSpriteKey": .string("")],
-            ["_subSpriteKey": .string("///target")], ["_subSpriteKey": .string("*")],
+            ["_subSpriteKey": .string("///target")], ["_subSpriteKey": .string("[ab]")],
             ["_subSpriteKey": .string("/")], ["_subSpriteKey": .string("container/")],
             ["_subSpriteKey": .string("container///target")], ["_subSpriteKey": .string("container//")], ["_subSpriteKey": .string("container//..")], ["_subSpriteKey": .string("../") ],
             ["_duration": .number(1)], ["_waitForKeyedAction": .bool(true)],
@@ -662,6 +662,17 @@ import SpriteGraph
         scene.advance(by: .milliseconds(500))
         #expect(target.position.x == 10 && !target.hasActions && !scene.hasActions)
         #expect(!outside.hasActions)
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresWildcardChildActions(format: String) throws {
+        let scene = try #require(SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/wildcard-actions." + format))).makeNode() as? Scene)
+        scene.advance(by: .milliseconds(500))
+        #expect(scene.children.map(\.position) == [[0, 0], [5, 0], [0, 0]])
+        scene.advance(by: .milliseconds(500))
+        #expect(scene.children.map(\.position) == [[0, 0], [10, 0], [0, 0]])
+        #expect(scene.children.allSatisfy { !$0.hasActions })
     }
 
     @Test func rejectsInvalidScaleActions() throws {
