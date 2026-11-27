@@ -695,3 +695,25 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: parentPathArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("parent-path-actions." + suffix))
 }
+
+let recursivePathScene = SKScene(size: CGSize(width: 100, height: 100))
+let outsideTarget = SKNode()
+outsideTarget.name = "target"
+recursivePathScene.addChild(outsideTarget)
+let recursiveCaller = SKNode()
+recursiveCaller.name = "caller"
+let nestedContainer = SKNode()
+let nestedTarget = SKNode()
+nestedTarget.name = "target"
+nestedContainer.addChild(nestedTarget)
+recursiveCaller.addChild(nestedContainer)
+recursivePathScene.addChild(recursiveCaller)
+recursiveCaller.run(.group([
+    .run(.moveBy(x: 10, y: 0, duration: 1), onChildWithName: "//target"),
+    .run(.moveBy(x: 0, y: 5, duration: 1), onChildWithName: ".//target")
+]))
+let recursivePathArchive = try tilePlist(recursivePathScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: recursivePathArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("recursive-path-actions." + suffix))
+}
