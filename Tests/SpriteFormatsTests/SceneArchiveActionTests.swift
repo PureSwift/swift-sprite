@@ -583,7 +583,7 @@ import SpriteGraph
             [:], ["_action": .null], ["_subSpriteKey": .string("")],
             ["_subSpriteKey": .string("//target")], ["_subSpriteKey": .string("*")],
             ["_subSpriteKey": .string("/")], ["_subSpriteKey": .string("container/")],
-            ["_subSpriteKey": .string("container//target")], ["_subSpriteKey": .string("../target")],
+            ["_subSpriteKey": .string("container//target")], ["_subSpriteKey": .string("../") ],
             ["_duration": .number(1)], ["_waitForKeyedAction": .bool(true)],
             ["_actionKey": .string("key")], ["_runOnSubSprite": .bool(false)]
         ] {
@@ -621,6 +621,19 @@ import SpriteGraph
         #expect(local.position == .zero && !local.hasActions && !caller.hasActions)
         scene.advance(by: .milliseconds(500))
         #expect(target.position.x == 10 && !target.hasActions)
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresParentAndCurrentNodePaths(format: String) throws {
+        let scene = try #require(SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/parent-path-actions." + format))).makeNode() as? Scene)
+        let caller = scene.children[0], target = scene.children[1]
+        scene.advance(by: .milliseconds(500))
+        #expect(target.position.x == 5)
+        #expect(caller.position == .zero && caller.hasActions)
+        scene.advance(by: .seconds(1))
+        #expect(target.position == [10, 0] && caller.position == [0, 5])
+        #expect(!target.hasActions && !caller.hasActions)
     }
 
     @Test func rejectsInvalidScaleActions() throws {
