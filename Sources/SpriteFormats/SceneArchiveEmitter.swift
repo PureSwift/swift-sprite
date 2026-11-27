@@ -21,7 +21,7 @@ struct ArchiveEmitter: Sendable {
             guard try graph.isNull(fields[key]) else { throw SceneArchiveError.unsupported("Emitter \(key)") }
         }
         for key in ["_startColorVarianceR", "_startColorVarianceG", "_startColorVarianceB", "_startColorVarianceA",
-                    "_colorSpeedR", "_colorSpeedG", "_colorSpeedB", "_colorSpeedA", "_startColorBlendVariance",
+                    "_colorSpeedR", "_colorSpeedG", "_colorSpeedB", "_colorSpeedA",
                     "_colorBlendSpeed", "_startZPositionVariance", "_zPositionSpeed", "_emissionDistance",
                     "_emissionDistanceRange", "_fieldBitMask"] {
             guard try graph.number(fields[key], default: 0) == 0 else {
@@ -33,7 +33,7 @@ struct ArchiveEmitter: Sendable {
             "_startRotation": 0, "_startRotationVariance": 0, "_rotationSpeed": 0,
             "_startOpacity": 1, "_startOpacityVariance": 0, "_opacitySpeed": 0,
             "_startScale": 1, "_startScaleVariance": 0, "_scaleSpeed": 0,
-            "_startZPosition": 0, "_startColorMix": 0]
+            "_startZPosition": 0, "_startColorMix": 0, "_startColorBlendVariance": 0]
         var numbers: [String: Float] = [:]
         for (key, fallback) in defaults {
             let value = try graph.number(fields[key], default: fallback)
@@ -89,6 +89,7 @@ struct ArchiveEmitter: Sendable {
             ("_startOpacity", \.particleAlpha), ("_startOpacityVariance", \.particleAlphaRange),
             ("_opacitySpeed", \.particleAlphaSpeed), ("_startScale", \.particleScale),
             ("_startScaleVariance", \.particleScaleRange), ("_scaleSpeed", \.particleScaleSpeed),
+            ("_startColorBlendVariance", \.particleColorBlendFactorRange),
             ("_startZPosition", \.particleZPosition), ("_startColorMix", \.particleColorBlendFactor)]
         for (key, path) in properties {
             if let value = values[key] { emitter[keyPath: path] = value }
