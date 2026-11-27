@@ -9,6 +9,25 @@ import SpriteCore
 
 @MainActor @Suite struct ActionTests {
 
+    @Test func relativeResizeComposesAndIgnoresPlainNodes() {
+        let scene = Scene(size: [200, 100])
+        let sprite = Sprite(color: .white, size: [20, 30])
+        let node = Node()
+        scene.addChild(sprite)
+        scene.addChild(node)
+        let action = Action.group([
+            .resize(by: [10, -10], duration: .seconds(2)),
+            .resize(by: [20, 10], duration: .seconds(2))
+        ])
+        sprite.run(action)
+        node.run(action)
+        scene.advance(by: .seconds(1))
+        #expect(sprite.size == [35, 30])
+        scene.advance(by: .seconds(1))
+        #expect(sprite.size == [50, 30])
+        #expect(!sprite.hasActions && !node.hasActions)
+    }
+
     @Test(arguments: 0..<6)
     func cancellingNestedTextureAnimationRestoresOriginal(wrapper: Int) {
         let original = Texture(id: TextureID(rawValue: 1), textureSize: [12, 8])
