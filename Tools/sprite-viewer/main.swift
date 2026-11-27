@@ -17,7 +17,7 @@
 
 import Foundation
 import SpriteFormats
-import CSDL3
+import SDL3Swift
 import SpriteCore
 import SpriteGraph
 import SpritePhysics
@@ -319,7 +319,7 @@ final class DemoScene: Scene {
     }
 }
 
-let window = try SDLWindow(title: "sprite-viewer", width: 960, height: 640)
+let window = try SpriteSDL.SDLWindow(title: "sprite-viewer", width: 960, height: 640)
 let backend = SDLRenderBackend(window: window)
 
 let atlas = try TextureAtlas.make(
@@ -345,11 +345,35 @@ if let option = CommandLine.arguments.firstIndex(of: "--tmx") {
     scene = Scene(size: Vector2(Float(map.columns), Float(map.rows)) * map.tileSize)
     scene.scaleMode = .aspectFit
     scene.addChild(try map.makeNode(backend: backend))
+} else if let option = CommandLine.arguments.firstIndex(of: "--sks") {
+    guard CommandLine.arguments.indices.contains(option + 1) else {
+        throw SceneArchiveError.invalid("Usage: sprite-viewer --sks path/to/scene.sks")
+    }
+    let url = URL(fileURLWithPath: CommandLine.arguments[option + 1])
+    let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: url))
+    for diagnostic in archive.diagnostics { print(diagnostic) }
+    // Preview uses the built-in bitmap font; applications can supply their own font mapping.
+    let font = try BitmapFont.debug(backend: backend)
+    let root = try archive.makeNode(textureResolver: { reference in
+        guard reference.atlasName == nil, reference.subtextureName == nil else {
+            throw SceneArchiveError.unsupported("Viewer requires loose PNG textures")
+        }
+        var imageURL = URL(fileURLWithPath: reference.imageName, relativeTo: url.deletingLastPathComponent())
+        if imageURL.pathExtension.isEmpty { imageURL.appendPathExtension("png") }
+        let pixels = try PixelBuffer(png: Array(Data(contentsOf: imageURL)))
+        return try backend.makeTexture(pixels, filtering: reference.filtering)
+    }, fontResolver: { _ in font })
+    if let archivedScene = root as? Scene {
+        scene = archivedScene
+    } else {
+        scene = Scene(size: backend.drawableSize)
+        scene.addChild(root)
+    }
 } else {
     scene = DemoScene(size: backend.drawableSize, atlas: atlas, font: try .debug(backend: backend))
 }
 var running = true
-var lastTicks = SDL_GetTicksNS()
+var lastTicks = SDL.ticks
 
 while running {
     for event in window.pollEvents() {
@@ -357,7 +381,7 @@ while running {
         if case .keyDown(.escape, _) = event { running = false }
         (scene as? DemoScene)?.handle(event)
     }
-    let now = SDL_GetTicksNS()
+    let now = SDL.ticks
     let deltaTime = Duration.nanoseconds(Int64(now - lastTicks))
     lastTicks = now
     try scene.present(on: backend, deltaTime: deltaTime)
