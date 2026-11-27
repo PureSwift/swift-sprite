@@ -6,6 +6,111 @@ import SpriteGraph
 
 @Suite struct SceneArchiveEmitterTests {
     @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresScreenBlending(format: String) throws {
+        let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/screen-blend." + format)))
+        let scene = try #require(archive.makeNode(textureResolver: { _ in
+            Texture(id: TextureID(rawValue: 1), textureSize: [80, 40])
+        }) as? Scene)
+        let sprite = try #require(scene.children.first as? Sprite)
+        let emitter = try #require(scene.children.last as? ParticleEmitter)
+        #expect(sprite.blendMode == .screen && emitter.particleBlendMode == .screen)
+        scene.advance(by: .seconds(1))
+        let frame = scene.makeFrame(viewportSize: [100, 100])
+        #expect(frame.vertices.count == 8)
+        #expect(frame.batches.allSatisfy { $0.blendMode == .screen })
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func zeroSizeUsesResolvedTextureDimensions(format: String) throws {
+        let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/emitter-texture-size." + format)))
+        let texture = Texture(id: TextureID(rawValue: 7), textureSize: [80, 40])
+            .subtexture(inUnitRect: Rect(x: 0.25, y: 0, width: 0.5, height: 1))
+        let emitter = try #require(archive.makeNode(textureResolver: { _ in texture }) as? ParticleEmitter)
+        #expect(emitter.particleSize == nil)
+        let scene = Scene(size: [100, 100])
+        scene.addChild(emitter)
+        scene.advance(by: .seconds(1))
+        let frame = scene.makeFrame(viewportSize: [100, 100])
+        #expect(frame.vertices.count == 4)
+        let xs = frame.vertices.map(\.position.x)
+        let ys = frame.vertices.map(\.position.y)
+        #expect(try #require(xs.max()) - #require(xs.min()) == 40)
+        #expect(try #require(ys.max()) - #require(ys.min()) == 40)
+        #expect(frame.batches.first?.texture == texture.id)
+        // A later texture assignment still controls an implicit particle size.
+        emitter.particleTexture = Texture(id: TextureID(rawValue: 8), textureSize: [20, 10])
+        let changed = scene.makeFrame(viewportSize: [100, 100])
+        let changedX = changed.vertices.map(\.position.x)
+        #expect(try #require(changedX.max()) - #require(changedX.min()) == 20)
+    }
+
+    @MainActor @Test func preservesExplicitAndUntexturedSizes() throws {
+        let graph = try graph()
+        let texture = Texture(id: TextureID(rawValue: 1), textureSize: [80, 40])
+        for size in ["{0, 0}", "{0, 10}", "{10, 0}", "{12, 8}"] {
+            let archive = try ArchiveEmitter(["_startSize": .string(size)], graph: graph)
+            #expect(archive.makeEmitter(texture: nil).particleSize == archive.size)
+            let emitter = archive.makeEmitter(texture: texture)
+            #expect(emitter.particleSize == (archive.size == .zero ? nil : archive.size))
+        }
+    }
+
+    @MainActor @Test func restoresBlendVariance() throws {
+        let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/emitter-blend.sks")))
+        let emitter = try #require(archive.makeNode() as? ParticleEmitter)
+        #expect(emitter.particleColorBlendFactor == 1)
+        #expect(emitter.particleColorBlendFactorRange == 1)
+        let scene = Scene(size: [100, 100])
+        scene.addChild(emitter)
+        scene.advance(by: .seconds(1))
+        let frame = scene.makeFrame(viewportSize: [100, 100])
+        let color = try #require(frame.vertices.first?.color)
+        #expect(color.red == 1 && color.alpha == 1)
+        #expect((0 ... 0.5).contains(color.green) && color.green == color.blue)
+        #expect(scene.makeFrame(viewportSize: [100, 100]).vertices == frame.vertices)
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresColorKeyframes(format: String) throws {
+        let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/emitter-colors." + format)))
+        let emitter = try #require(archive.makeNode() as? ParticleEmitter)
+        let sequence = try #require(emitter.particleColorSequence)
+        #expect(sequence.value(at: -1) == .red)
+        #expect(sequence.value(at: 2) == Color(white: 0.5, alpha: 0.5))
+        let middle = Color(red: 0.75, green: 0.25, blue: 0.25, alpha: 0.75)
+        #expect(sequence.value(at: 0.5) == middle)
+        let scene = Scene(size: [100, 100])
+        scene.addChild(emitter)
+        scene.advance(by: .seconds(1))
+        #expect(scene.makeFrame(viewportSize: [100, 100]).vertices.first?.color == .red)
+        scene.advance(by: .seconds(1))
+        #expect(scene.makeFrame(viewportSize: [100, 100]).vertices.first?.color == middle)
+    }
+
+    @Test func rejectsMalformedColors() throws {
+        let graph = try KeyedArchive(ArchivePropertyList.decode(Data(contentsOf: Fixtures.url("SceneArchives/emitter-colors.sks"))))
+        let index = try #require(graph.objects.firstIndex { $0.dictionary?["NSRGB"] != nil })
+        for changes: [String: PropertyValue] in [
+            ["NSRGB": .data(Data("nan 0 0".utf8))],
+            ["NSRGB": .data(Data("1 0".utf8))],
+            ["NSRGB": .data(Data("1 0 0 2".utf8))],
+            ["NSRGB": .data(Data("1 bad 0".utf8))],
+            ["NSRGB": .data(Data([0xff]))],
+            ["NSRGB": .string("1 0 0")],
+            ["NSColorSpace": .number(6)]
+        ] {
+            var objects = graph.objects
+            let fields = try graph.dictionary(.uid(index))
+            objects[index] = .dictionary(fields.merging(changes) { _, new in new })
+            let modified = try KeyedArchive(.dictionary(["$archiver": .string("NSKeyedArchiver"),
+                "$version": .number(100_000), "$top": .dictionary(["root": .uid(graph.rootID)]), "$objects": .array(objects)]))
+            #expect(throws: SceneArchiveError.self) {
+                try ArchiveEmitter(modified.dictionary(.uid(modified.rootID)), graph: modified)
+            }
+        }
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
     func restoresAndSimulatesNativeEmitters(format: String) throws {
         let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/emitters." + format)))
         var requests = 0
@@ -71,6 +176,7 @@ import SpriteGraph
     @Test func rejectsMalformedEmitterValues() throws {
         let graph = try graph()
         for fields: [String: PropertyValue] in [["_birthrate": .number(-1)], ["_birthrate": .number(.infinity)],
+            ["_startColorBlendVariance": .number(-1)], ["_startColorBlendVariance": .number(.nan)],
             ["_numParticlesToEmit": .number(1.5)], ["_numParticlesToEmit": .number(-1)],
             ["_startSpeedVariance": .number(-1)], ["_startSize": .string("{-1, 3}")],
             ["_startPositionVariance": .string("{nan, 0}")]] {

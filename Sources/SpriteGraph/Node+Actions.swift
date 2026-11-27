@@ -60,13 +60,13 @@ public extension Node {
     func removeAction(forKey key: String) {
         let removed = actions.filter { $0.key == key }
         actions.removeAll { $0.key == key }
-        removed.forEach { $0.completion?(false) }
+        removed.forEach { $0.state.cancel(self); $0.completion?(false) }
     }
 
     func removeAllActions() {
         let removed = actions
         actions.removeAll()
-        removed.forEach { $0.completion?(false) }
+        removed.forEach { $0.state.cancel(self); $0.completion?(false) }
     }
 }
 
@@ -90,7 +90,8 @@ extension Node {
         // Iterate a snapshot; completions may run or remove actions.
         for running in actions {
             guard actions.contains(where: { $0.state === running.state }) else { continue }
-            if running.state.advance(self, by: dt) != nil {
+            if running.state.advance(self, by: dt) != nil,
+               actions.contains(where: { $0.state === running.state }) {
                 actions.removeAll { $0.state === running.state }
                 running.completion?(true)
             }

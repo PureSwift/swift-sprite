@@ -9,6 +9,86 @@ import SpriteCore
 
 @MainActor @Suite struct ActionTests {
 
+    @Test(arguments: 0..<6)
+    func cancellingNestedTextureAnimationRestoresOriginal(wrapper: Int) {
+        let original = Texture(id: TextureID(rawValue: 1), textureSize: [12, 8])
+        let frame = Texture(id: TextureID(rawValue: 2), textureSize: [24, 16])
+        let sprite = Sprite(texture: original)
+        let animation = Action.animate(with: [frame], timePerFrame: .seconds(1), resize: true, restore: true)
+        let action: Action
+        switch wrapper {
+        case 0: action = animation
+        case 1: action = .sequence([.wait(for: .milliseconds(100)), animation])
+        case 2: action = .group([animation, .wait(for: .seconds(2))])
+        case 3: action = .repeat(animation, count: 3)
+        case 4: action = .repeatForever(animation)
+        default: action = animation.timingMode(.easeIn)
+        }
+        var completed = false
+        sprite.run(action, withKey: "flipbook") { completed = true }
+        step(sprite, seconds: 0.25)
+        #expect(sprite.texture == frame && sprite.size == frame.size)
+        sprite.removeAction(forKey: "flipbook")
+        #expect(sprite.texture == original && sprite.size == original.size)
+        #expect(!sprite.hasActions && !completed)
+    }
+
+    @Test func removingAndReplacingTextureAnimations() {
+        let original = Texture(id: TextureID(rawValue: 1), textureSize: [12, 8])
+        let frame = Texture(id: TextureID(rawValue: 2), textureSize: [24, 16])
+        let sprite = Sprite(texture: original)
+        sprite.size = [5, 7]
+        let animation = Action.animate(with: [frame], timePerFrame: .seconds(1), restore: true)
+        sprite.run(animation, withKey: "flipbook")
+        step(sprite, seconds: 0.25)
+        sprite.run(animation, withKey: "flipbook")
+        #expect(sprite.texture == original && sprite.size == [5, 7])
+        step(sprite, seconds: 0.25)
+        sprite.removeAllActions()
+        #expect(sprite.texture == original && sprite.size == [5, 7])
+        sprite.texture = nil
+        sprite.run(animation)
+        step(sprite, seconds: 0.25)
+        sprite.removeAllActions()
+        #expect(sprite.texture == nil && sprite.size == [5, 7])
+        sprite.run(.animate(with: [frame], timePerFrame: .seconds(1), restore: false))
+        step(sprite, seconds: 0.25)
+        sprite.removeAllActions()
+        #expect(sprite.texture == frame)
+    }
+
+    @Test func cancellationDoesNotRestoreInactiveAnimation() {
+        let original = Texture(id: TextureID(rawValue: 1), textureSize: [12, 8])
+        let frame = Texture(id: TextureID(rawValue: 2), textureSize: [24, 16])
+        let sprite = Sprite(texture: original)
+        let animation = Action.animate(with: [frame], timePerFrame: .seconds(1), restore: true)
+        sprite.run(.sequence([.wait(for: .seconds(1)), animation]))
+        step(sprite, seconds: 0.25)
+        sprite.texture = frame
+        sprite.removeAllActions()
+        #expect(sprite.texture == frame)
+        sprite.texture = original
+        sprite.run(.group([animation, .wait(for: .seconds(10))]))
+        step(sprite, seconds: 2)
+        #expect(sprite.texture == original)
+        sprite.texture = frame
+        sprite.removeAllActions()
+        #expect(sprite.texture == frame)
+    }
+
+    @Test func cancellationInsideCallbackStopsComposite() {
+        let sprite = Sprite(texture: nil)
+        let frame = Texture(id: TextureID(rawValue: 2), textureSize: [24, 16])
+        let cancel = Action.run { node in node.removeAllActions() }
+        let animation = Action.animate(with: [frame], timePerFrame: .seconds(1), restore: true)
+        for action in [Action.sequence([cancel, animation]), .group([cancel, animation]), .repeatForever(cancel)] {
+            var completed = false
+            sprite.run(action) { completed = true }
+            step(sprite, seconds: 0.25)
+            #expect(sprite.texture == nil && !sprite.hasActions && !completed)
+        }
+    }
+
     /// Advances `node` (via a temporary scene) in fixed steps.
     func step(_ node: Node, seconds: Double, steps: Int = 1) {
         for _ in 0 ..< steps {

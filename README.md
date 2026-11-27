@@ -145,6 +145,24 @@ explicit errors. Texture references include image, atlas, subtexture, and filter
 Resolvers return the named image or atlas entry before the archive's unit-rectangle crop.
 Returned textures remain owned by the application's backend.
 
+Named `SKReferenceNode` instances use an explicit archive resolver:
+
+```swift
+let root = try archive.makeNode(
+    textureResolver: { textures[$0.imageName] },
+    referenceResolver: { archivesByReferenceName[$0] }
+)
+```
+
+`referenceNames` lists direct references. Names are passed through unchanged (some
+include `.sks`); the loader never opens referenced files automatically. Each instance
+gets independent nodes and actions. Referenced scene roots become plain nodes under
+the reference wrapper; their scene-only background, camera selection, and physics-world
+settings do not replace the containing scene's settings. Resource caches are shared
+across the expanded tree. Missing references, cycles, more than 31 nested reference
+levels, and expansions beyond 100,000 nodes throw errors. URL-based references and
+physics bodies under scaled reference hierarchies remain unsupported.
+
 This is an initial archive subset tested against fixtures generated with macOS SpriteKit,
 not a guarantee of compatibility with every Xcode editor or OS archive version.
 Custom/unknown node classes, constraints, effects, lighting,
@@ -167,15 +185,37 @@ fixtures cover binary/XML decoding and simulation without requiring SpriteKit at
 
 Archived actions support relative/absolute movement (including single-axis movement),
 Z rotation, two-axis scaling, fading, waits, hide/unhide, removal, sequences, groups,
-finite repeats, and repeat-forever. The ordered action list and keys are restored without
+finite repeats, repeat-forever, and `SKAnimate` texture flipbooks. The ordered action list and keys are restored without
 duplicating keyed actions. Each `makeNode()` creates independent playback state, and
 standard timing modes use the engine's easing curves.
 
 Actions start from their archived descriptions. Reversed actions, detectable partially
-executed state, retimed composites, single-axis/size-based scaling, texture/color/resize
+executed state, retimed composites/flipbooks, single-axis/size-based scaling, color/resize
 animations, paths, sounds, callbacks, and custom classes are unsupported. Native fixtures
 do not encode action speed; omitted runtime state cannot be recovered. Node speed and
 pause settings still apply. This is not a snapshot/resume mechanism for running games.
+
+Texture flipbooks resolve every frame through the scene texture resolver and shared
+cache, including atlas subrects. They support uniform frame timing, optional resizing,
+and restoration on completion or cancellation, including keyed replacement and nested
+actions. Only animations that have started and are still active restore their texture.
+Editor archives may save scenes and sprites paused; unpause the desired
+nodes explicitly to start playback.
+
+Standalone editor `Actions.sks` libraries can be loaded independently of a scene:
+
+```swift
+let library = try await SpriteKitActionArchive.decode(at: actionsURL)
+if let pulse = try library.makeAction(named: "Pulse") {
+    node.run(pulse, withKey: "pulse")
+}
+```
+
+`actionNames` returns sorted names. `makeAction(named:textureResolver:)` returns nil
+for an unknown name and resolves flipbook textures when needed, caching repeated
+references within that call. Running the same action on different nodes creates
+independent playback state. Libraries use the same supported action types and limits
+as scene archives; unsupported entries reject the library during decoding.
 
 Particle emitters restore birth rate/count, lifetime, spawn position/range, speed and
 emission angle, acceleration, rotation, scale, opacity, color/blend factor, size, blend
@@ -183,7 +223,18 @@ mode, and particle Z position. Named particle textures use the same cached resol
 sprites. Targets must reference a node in the imported tree. Alpha/scale keyframes
 support linear interpolation with clamping. Standalone emitter archives are supported.
 
-Color keyframes, per-channel color ranges/speeds, animated color blending, particle
+Linear, clamped color keyframes support archived `NSColor` RGB and grayscale values,
+including alpha. The importer uses the stored RGB/white fallback directly; custom ICC
+profiles are not color-managed. Other color classes and color spaces are unsupported.
+
+A zero archived particle size uses the resolved texture dimensions, including atlas
+subrects. Explicit sizes are preserved; zero size without a texture stays invisible.
+
+Starting color-blend variance is supported: each particle samples the base factor
+plus a random offset within half the range, then clamps it to `0...1`. The sampled
+factor stays fixed for its lifetime; changes to the emitter affect future particles.
+
+Per-channel color ranges/speeds, color-blend speeds/sequences, particle
 actions, speed/rotation keyframes, fields, emission distance, and Z ranges/speeds are
 currently unsupported. Imported emitters start with no live particles and retain the
 engine's 10,000-live-particle cap; simulation is not intended to reproduce SpriteKit's
@@ -275,3 +326,13 @@ try backend.render(batcher.makeFrame(viewTransform: .viewport(size: backend.draw
 swift run sprite-viewer
 swift test
 ```
+
+### Screen blending
+
+`BlendMode.screen` is supported for sprites and particles, including archived
+SpriteKit screen blend modes. The SDL backend uses a custom blend mode with
+premultiplied textures and vertex colors to preserve source transparency. It retains
+CPU texture pixels and lazily caches a premultiplied GPU copy when a texture is first
+used for screen blending; texture updates invalidate that copy. Renderers without
+support for the custom blend factors throw an SDL error. The Metal path has been
+checked locally; the software backend is not guaranteed to support this mode.

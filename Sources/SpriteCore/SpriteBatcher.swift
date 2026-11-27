@@ -13,6 +13,8 @@ public enum BlendMode: Hashable, Comparable, Sendable {
     case multiply
     /// No blending; source replaces destination.
     case replace
+    /// Screen composite: source plus destination times inverse source, weighted by source alpha.
+    case screen
 }
 
 /// Fragment shading applied to a quad's texture.

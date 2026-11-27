@@ -76,8 +76,12 @@ open class ParticleEmitter: Node {
 
     public var particleColor: Color = .white
 
-    /// Mixes white texture tint with particle color. Defaults to full tint for existing emitters.
+    /// Starting mix of white texture tint with particle color, sampled at birth.
     public var particleColorBlendFactor: Float = 1
+
+    /// Full width of the random starting blend range, centered on the base factor.
+    /// Each particle retains its sampled factor, clamped to `0...1`.
+    public var particleColorBlendFactorRange: Float = 0
 
     /// Color over normalized particle age (`0...1`), overriding ``particleColor``.
     public var particleColorSequence: KeyframeSequence<Color>?
@@ -198,7 +202,8 @@ open class ParticleEmitter: Node {
                 scale: Self.spread(particleScale, particleScaleRange),
                 scaleSpeed: particleScaleSpeed,
                 alpha: Self.spread(particleAlpha, particleAlphaRange),
-                alphaSpeed: particleAlphaSpeed
+                alphaSpeed: particleAlphaSpeed,
+                colorBlendFactor: min(max(Self.spread(particleColorBlendFactor, particleColorBlendFactorRange), 0), 1)
             )
             emittedCount += 1
         }
@@ -227,7 +232,7 @@ open class ParticleEmitter: Node {
         for i in 0 ..< particles.count {
             let t = particles.age[i] / particles.lifetime[i]
             var color = particleColorSequence?.value(at: t) ?? particleColor
-            color = Color.white.mix(with: color, fraction: min(max(particleColorBlendFactor, 0), 1))
+            color = Color.white.mix(with: color, fraction: particles.colorBlendFactor[i])
             color.alpha *= max(particleAlphaSequence?.value(at: t) ?? particles.alpha[i], 0)
             let scale = particleScaleSequence?.value(at: t) ?? particles.scale[i]
             guard color.alpha > 0, scale > 0 else { continue }

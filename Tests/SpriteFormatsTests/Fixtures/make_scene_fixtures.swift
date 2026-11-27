@@ -269,3 +269,98 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: animatedArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("tiles-animated." + suffix))
 }
+
+let colorEmitter = SKEmitterNode()
+colorEmitter.particleBirthRate = 1
+colorEmitter.particleLifetime = 2
+colorEmitter.numParticlesToEmit = 1
+colorEmitter.particleSize = CGSize(width: 8, height: 8)
+colorEmitter.particleColorBlendFactor = 1
+colorEmitter.particleColorSequence = SKKeyframeSequence(keyframeValues: [
+    NSColor(calibratedRed: 1, green: 0, blue: 0, alpha: 1),
+    NSColor(calibratedWhite: 0.5, alpha: 0.5)
+], times: [0, 1])
+let colorArchive = try tilePlist(colorEmitter)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: colorArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("emitter-colors." + suffix))
+}
+
+colorEmitter.particleColorBlendFactorRange = 1
+let blendArchive = try tilePlist(colorEmitter)
+try PropertyListSerialization.data(fromPropertyList: blendArchive, format: .binary, options: 0)
+    .write(to: directory.appendingPathComponent("emitter-blend.sks"))
+
+let textureSizedEmitter = SKEmitterNode()
+textureSizedEmitter.particleTexture = tileTexture
+textureSizedEmitter.particleBirthRate = 1
+textureSizedEmitter.numParticlesToEmit = 1
+textureSizedEmitter.particleLifetime = 10
+let textureSizedArchive = try tilePlist(textureSizedEmitter)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: textureSizedArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("emitter-texture-size." + suffix))
+}
+
+let animationScene = SKScene(size: CGSize(width: 100, height: 100))
+for (name, restore) in [("once", false), ("restore", true), ("loop", false), ("fixed", false)] {
+    let originalTexture = SKTexture(rect: CGRect(x: 0, y: 0, width: 0.25, height: 1), in: tileTexture)
+    let sprite = SKSpriteNode(texture: originalTexture, size: CGSize(width: 12, height: 8))
+    sprite.name = name
+    let flipbook = SKAction.animate(with: [croppedTile, tileTexture], timePerFrame: 0.25,
+        resize: name != "fixed", restore: restore)
+    let action = name == "loop" ? SKAction.repeatForever(SKAction.group([flipbook]))
+        : SKAction.sequence([SKAction.wait(forDuration: 0.25), flipbook])
+    sprite.run(action, withKey: "flipbook")
+    animationScene.addChild(sprite)
+}
+let animationArchive = try tilePlist(animationScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: animationArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("texture-actions." + suffix))
+}
+
+let screenScene = SKScene(size: CGSize(width: 100, height: 100))
+let screenSprite = SKSpriteNode(texture: tileTexture)
+screenSprite.blendMode = .screen
+screenScene.addChild(screenSprite)
+let screenEmitter = SKEmitterNode()
+screenEmitter.particleBirthRate = 1
+screenEmitter.particleLifetime = 10
+screenEmitter.particleSize = CGSize(width: 8, height: 8)
+screenEmitter.particleBlendMode = .screen
+screenScene.addChild(screenEmitter)
+let screenArchive = try tilePlist(screenScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: screenArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("screen-blend." + suffix))
+}
+
+let actionLibrary = try tilePlist(["actions": [
+    "Move": SKAction.moveBy(x: 20, y: 10, duration: 1),
+    "Flipbook": SKAction.animate(with: [croppedTile, tileTexture], timePerFrame: 0.25)
+]])
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: actionLibrary, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("action-library." + suffix))
+}
+
+let referenceTarget = SKScene(size: CGSize(width: 100, height: 100))
+let referencedSprite = SKSpriteNode(texture: tileTexture)
+referencedSprite.name = "content"
+referencedSprite.position = CGPoint(x: 5, y: 7)
+referenceTarget.addChild(referencedSprite)
+let referenceScene = SKScene(size: CGSize(width: 200, height: 100))
+for x in [20, 80] {
+    guard let reference = SKReferenceNode(fileNamed: "ReferenceTarget") else { fatalError("Missing reference node") }
+    reference.name = "instance-\(x)"
+    reference.position = CGPoint(x: x, y: 10)
+    referenceScene.addChild(reference)
+}
+for (name, root) in [("references", referenceScene), ("reference-target", referenceTarget)] {
+    let archive = try tilePlist(root)
+    for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+        try PropertyListSerialization.data(fromPropertyList: archive, format: format, options: 0)
+            .write(to: directory.appendingPathComponent(name + "." + suffix))
+    }
+}
