@@ -199,3 +199,56 @@ try PropertyListSerialization.data(fromPropertyList: emitterPlist, format: .bina
     .write(to: directory.appendingPathComponent("emitters.sks"))
 try PropertyListSerialization.data(fromPropertyList: emitterPlist, format: .xml, options: 0)
     .write(to: directory.appendingPathComponent("emitters.xml"))
+
+
+let tileTexture = SKTexture(imageNamed: imagePath)
+let tileA = SKTileDefinition(texture: tileTexture, size: CGSize(width: 16, height: 16))
+let tileB = SKTileDefinition(texture: tileTexture, size: CGSize(width: 16, height: 16))
+let tileC = SKTileDefinition(texture: tileTexture, size: CGSize(width: 16, height: 16))
+let rule = SKTileGroupRule(adjacency: .adjacencyAll, tileDefinitions: [tileA, tileB])
+let groupA = SKTileGroup(rules: [rule])
+let groupB = SKTileGroup(tileDefinition: tileC)
+let sharedGroup = SKTileGroup(tileDefinition: tileA)
+let tileSet = SKTileSet(tileGroups: [groupA, groupB, sharedGroup], tileSetType: .grid)
+tileSet.name = "Terrain"
+let tileMap = SKTileMapNode(tileSet: tileSet, columns: 3, rows: 2, tileSize: CGSize(width: 16, height: 16))
+tileMap.enableAutomapping = false
+tileMap.name = "grid"
+tileMap.position = CGPoint(x: 20, y: 30)
+tileMap.anchorPoint = CGPoint(x: 0.25, y: 0.75)
+tileMap.color = NSColor(srgbRed: 0.2, green: 0.4, blue: 0.6, alpha: 1)
+tileMap.colorBlendFactor = 0.5
+tileMap.setTileGroup(groupA, andTileDefinition: tileA, forColumn: 0, row: 0)
+tileMap.setTileGroup(groupA, andTileDefinition: tileB, forColumn: 1, row: 0)
+tileMap.setTileGroup(groupB, andTileDefinition: tileC, forColumn: 0, row: 1)
+tileMap.setTileGroup(sharedGroup, andTileDefinition: tileA, forColumn: 1, row: 1)
+func tilePlist(_ root: Any) throws -> [String: Any] {
+    let data = try NSKeyedArchiver.archivedData(withRootObject: root, requiringSecureCoding: true)
+    guard var plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+          var objects = plist["$objects"] as? [Any] else { fatalError("Invalid tile archive") }
+    for index in objects.indices where (objects[index] as? String) == imagePath {
+        objects[index] = "../SpriteKit/sample.atlas/wide.png"
+    }
+    plist["$objects"] = objects
+    return plist
+}
+let tileArchive = try tilePlist(tileMap)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: tileArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("tiles." + suffix))
+}
+try PropertyListSerialization.data(fromPropertyList: tilePlist([tileSet]), format: .binary, options: 0)
+    .write(to: directory.appendingPathComponent("tilesets.sks"))
+// Editor scenes store only a tile-set name; preserve native cells and replace the embedded reference.
+var externalArchive = tileArchive
+guard var tileObjects = externalArchive["$objects"] as? [Any],
+      let nullReference = (tileObjects[1] as? [String: Any])?["_userData"] else { fatalError("Invalid tile objects") }
+for index in tileObjects.indices {
+    guard var object = tileObjects[index] as? [String: Any], object["_rawTiles"] != nil else { continue }
+    object["_tileSet"] = nullReference
+    object["_tileSetName"] = "Terrain"
+    tileObjects[index] = object
+}
+externalArchive["$objects"] = tileObjects
+try PropertyListSerialization.data(fromPropertyList: externalArchive, format: .binary, options: 0)
+    .write(to: directory.appendingPathComponent("tiles-external.sks"))
