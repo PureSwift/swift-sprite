@@ -362,6 +362,24 @@ reference name. Missing references, cycles, and excessive expansion fail explici
 The fixture generator is `Tests/SpriteFormatsTests/Fixtures/make_scene_fixtures.swift`
 (macOS only); tests consume the checked-in archives and require no SpriteKit runtime.
 
+### Viewer smoke checks
+
+Pass `--frames N` to render a bounded number of frames and exit. This mode advances
+simulation by a fixed 1/60 second per frame; normal interactive playback uses elapsed
+time. A completed run prints `Rendered N frames.`.
+
+After building the viewer, run:
+
+```sh
+python3 Scripts/smoke-viewer.py "$(swift build --show-bin-path)/sprite-viewer"
+```
+
+The script uses SDL's dummy video driver and software renderer, requires clean exits
+and completed frames for successful loads, and treats timeouts as failures. Its 18
+checks cover custom classes, references, source/compiled atlases, physics fixtures,
+and invalid options or resources. Temporary derived archives stay outside the repository.
+The `Viewer smoke tests` workflow builds and runs these checks on pushes and pull requests.
+
 ### Tutorial compatibility assets
 
 Download and extract **2D Apple Games by Tutorials, edition 3.0** from
