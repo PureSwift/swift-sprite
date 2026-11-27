@@ -401,3 +401,28 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: compoundArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("compound-physics." + suffix))
 }
+
+let edgeScene = SKScene(size: CGSize(width: 400, height: 200))
+let edgePath = CGMutablePath()
+edgePath.move(to: CGPoint(x: 10, y: 20))
+edgePath.addLine(to: CGPoint(x: 40, y: 20))
+edgePath.addLine(to: CGPoint(x: 40, y: 60))
+let edgeBodies = [
+    SKPhysicsBody(edgeFrom: CGPoint(x: 2, y: 3), to: CGPoint(x: 40, y: 5)),
+    SKPhysicsBody(edgeChainFrom: edgePath),
+    SKPhysicsBody(edgeLoopFrom: edgePath),
+    SKPhysicsBody(edgeLoopFrom: CGRect(x: 10, y: 20, width: 30, height: 40))
+]
+for (index, body) in edgeBodies.enumerated() {
+    let node = SKNode()
+    node.position.x = CGFloat(index * 100)
+    node.physicsBody = body
+    body.velocity = CGVector(dx: 10, dy: 20)
+    body.angularVelocity = 1
+    edgeScene.addChild(node)
+}
+let edgeArchive = try tilePlist(edgeScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: edgeArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("edge-physics." + suffix))
+}
