@@ -41,7 +41,10 @@ open class ParticleEmitter: Node {
     public var particleLifetime: Float = 1
     public var particleLifetimeRange: Float = 0
 
-    /// Spawn area around the emitter's origin.
+    /// Center of the spawn area in the emitter's local coordinates.
+    public var particlePosition: Vector2 = .zero
+
+    /// Spawn area around ``particlePosition``.
     public var particlePositionRange: Vector2 = .zero
 
     // MARK: - Motion
@@ -72,6 +75,9 @@ open class ParticleEmitter: Node {
     // MARK: - Appearance
 
     public var particleColor: Color = .white
+
+    /// Mixes white texture tint with particle color. Defaults to full tint for existing emitters.
+    public var particleColorBlendFactor: Float = 1
 
     /// Color over normalized particle age (`0...1`), overriding ``particleColor``.
     public var particleColorSequence: KeyframeSequence<Color>?
@@ -174,8 +180,8 @@ open class ParticleEmitter: Node {
         particles.reserveCapacity(particles.count + births)
         for k in 0 ..< births {
             let local = Vector2(
-                Self.spread(0, particlePositionRange.x),
-                Self.spread(0, particlePositionRange.y)
+                Self.spread(particlePosition.x, particlePositionRange.x),
+                Self.spread(particlePosition.y, particlePositionRange.y)
             )
             let angle = Self.spread(emissionAngle, emissionAngleRange)
             let speed = Self.spread(particleSpeed, particleSpeedRange)
@@ -221,6 +227,7 @@ open class ParticleEmitter: Node {
         for i in 0 ..< particles.count {
             let t = particles.age[i] / particles.lifetime[i]
             var color = particleColorSequence?.value(at: t) ?? particleColor
+            color = Color.white.mix(with: color, fraction: min(max(particleColorBlendFactor, 0), 1))
             color.alpha *= max(particleAlphaSequence?.value(at: t) ?? particles.alpha[i], 0)
             let scale = particleScaleSequence?.value(at: t) ?? particles.scale[i]
             guard color.alpha > 0, scale > 0 else { continue }
