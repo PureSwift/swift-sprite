@@ -50,6 +50,7 @@ public struct Action: Sendable {
         case rotateTo(Float, shortestUnitArc: Bool)
         case scale(by: Vector2)
         case scaleTo(x: Float?, y: Float?)
+        case scaleToSize(Vector2)
         case fade(by: Float)
         case fadeTo(Float)
         case resize(width: Float?, height: Float?)
@@ -198,6 +199,13 @@ public extension Action {
 
     static var unhide: Action {
         Action(.hide(false), seconds: 0)
+    }
+
+    /// Animates a sprite's scale to achieve a display size, using its base size
+    /// when playback starts. Zero-sized dimensions retain their scale.
+    /// Has no effect on other node types.
+    static func scale(toSize size: Vector2, duration: Duration) -> Action {
+        Action(.scaleToSize(size), duration: duration)
     }
 
     /// Changes a sprite's size by an additive amount.
