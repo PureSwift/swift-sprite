@@ -331,6 +331,17 @@ swift run sprite-viewer --sks Tests/SpriteFormatsTests/Fixtures/SceneArchives/sc
 ```
 
 The viewer loads loose PNGs relative to the archive and substitutes its built-in bitmap font.
+For named atlas textures, supply source or compiled atlas directories explicitly:
+
+```sh
+swift run sprite-viewer --sks scene.sks --atlas Characters.atlas --atlas Backgrounds.atlasc
+```
+
+Each atlas is registered under its folder name without the extension. Duplicate names
+are rejected. Uploads are cached per atlas and filtering mode and shared with referenced
+scenes. Compiled atlas rotation and trim padding are restored by the atlas decoder;
+unsupported rotation or trimming encoded directly on an archived texture still fails.
+Missing atlases and texture entries produce explicit errors.
 For custom classes, repeat `--class CustomName=SKNodeClass` as needed:
 
 ```sh
