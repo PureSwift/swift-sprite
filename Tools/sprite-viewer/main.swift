@@ -349,6 +349,13 @@ struct ViewerAtlasKey: Hashable {
 }
 
 let arguments = Array(CommandLine.arguments.dropFirst())
+let muteOptions = arguments.filter { $0 == "--mute" }
+let muteSounds = !muteOptions.isEmpty
+if muteSounds {
+    guard muteOptions.count == 1, arguments.contains("--sks"), !arguments.contains("--tmx") else {
+        throw SceneArchiveError.invalid("--mute may be supplied once and requires --sks")
+    }
+}
 let frameOptions = arguments.indices.filter { arguments[$0] == "--frames" }
 var frameLimit: Int?
 if let index = frameOptions.first {
@@ -464,6 +471,10 @@ if let option = CommandLine.arguments.firstIndex(of: "--tmx") {
             customNodeClasses: nodeClassMappings)
         for diagnostic in referenced.diagnostics { print("\(name): \(diagnostic)") }
         return referenced
+    }, soundResolver: { name in
+        guard muteSounds else { return nil }
+        print("Muted archived sound: \(name) (action timing preserved).")
+        return { _ in }
     })
     if let archivedScene = root as? Scene {
         scene = archivedScene
