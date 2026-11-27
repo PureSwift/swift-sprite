@@ -15,6 +15,19 @@ public enum SceneArchiveError: Error, Equatable, Sendable {
 /// Reads binary or XML SpriteKit keyed archives through Foundation.
 /// Archived classes are never instantiated; supported nodes are built in SpriteGraph.
 public struct SpriteKitSceneArchive: Sendable {
+    /// Supported archive node layouts for explicitly importing custom subclasses.
+    /// Mapping restores standard fields only, never custom code or custom fields.
+    public enum NodeClass: String, Sendable, CaseIterable {
+        case scene = "SKScene"
+        case node = "SKNode"
+        case sprite = "SKSpriteNode"
+        case camera = "SKCameraNode"
+        case label = "SKLabelNode"
+        case emitter = "SKEmitterNode"
+        case tileMap = "SKTileMapNode"
+        case reference = "SKReferenceNode"
+    }
+
     public struct TextureReference: Hashable, Sendable {
         public let imageName: String
         public let atlasName: String?
@@ -70,11 +83,15 @@ public struct SpriteKitSceneArchive: Sendable {
     /// Direct external references; nested archives may declare further names.
     public var referenceNames: [String] { Set(records.compactMap(\.referenceName)).sorted() }
 
-    public static func decode(at url: URL) async throws -> SpriteKitSceneArchive {
-        try await Task.detached { try decode(Data(contentsOf: url)) }.value
+    public static func decode(at url: URL, customNodeClasses: [String: NodeClass] = [:]) async throws -> SpriteKitSceneArchive {
+        try await Task.detached { try decode(Data(contentsOf: url), customNodeClasses: customNodeClasses) }.value
     }
 
-    public static func decode(_ data: Data) throws -> SpriteKitSceneArchive {
+    /// Custom class names require explicit mappings. Built-in classes cannot be overridden.
+    public static func decode(_ data: Data, customNodeClasses: [String: NodeClass] = [:]) throws -> SpriteKitSceneArchive {
+        guard customNodeClasses.keys.allSatisfy({ !$0.isEmpty && NodeClass(rawValue: $0) == nil }) else {
+            throw SceneArchiveError.invalid("Custom node mappings must use nonempty, non-built-in class names")
+        }
         let graph = try KeyedArchive(ArchivePropertyList.decode(data))
         var records: [Record] = []
         var seen = Set<Int>()
@@ -87,9 +104,13 @@ public struct SpriteKitSceneArchive: Sendable {
                 throw SceneArchiveError.invalid("Cyclic, shared, or excessively deep node hierarchy")
             }
             let fields = try graph.dictionary(.uid(id))
-            let className = try graph.className(fields)
-            guard ["SKScene", "SKNode", "SKSpriteNode", "SKCameraNode", "SKLabelNode", "SKEmitterNode", "SKTileMapNode", "SKReferenceNode"].contains(className) else {
-                throw SceneArchiveError.unsupported("Node class \(className) at object \(id)")
+            let archivedClass = try graph.className(fields)
+            guard let nodeClass = NodeClass(rawValue: archivedClass) ?? customNodeClasses[archivedClass] else {
+                throw SceneArchiveError.unsupported("Node class \(archivedClass) at object \(id)")
+            }
+            let className = nodeClass.rawValue
+            if archivedClass != className {
+                diagnostics.append("Object \(id): \(archivedClass) imported as \(className); custom fields and behavior are not restored.")
             }
             if className == "SKScene", id != graph.rootID {
                 throw SceneArchiveError.invalid("A scene cannot be a child node")
