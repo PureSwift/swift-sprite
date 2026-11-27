@@ -342,6 +342,12 @@ Supported targets are `SKScene`, `SKNode`, `SKSpriteNode`, `SKCameraNode`,
 Mappings require `--sks`; duplicate names, built-in name overrides, and unknown targets
 are rejected before opening a window. The viewer prints substitution diagnostics;
 custom gameplay behavior is not restored.
+
+The viewer resolves named reference scenes from the root archive's directory, appending
+`.sks` when the name has no extension. Nested reference names and loose textures use that
+same directory as their resource root, rather than the referenced file's directory.
+Custom-class mappings also apply to referenced archives, whose diagnostics include the
+reference name. Missing references, cycles, and excessive expansion fail explicitly.
 The fixture generator is `Tests/SpriteFormatsTests/Fixtures/make_scene_fixtures.swift`
 (macOS only); tests consume the checked-in archives and require no SpriteKit runtime.
 
