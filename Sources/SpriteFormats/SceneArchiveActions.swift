@@ -180,8 +180,14 @@ struct ArchiveActionDecoder {
         for key in ["_lastRatio", "_timesRepeated", "_mycaction->_animIndex"] {
             guard try number(key) == 0 else { throw SceneArchiveError.unsupported("Partially executed action") }
         }
-        guard try !flag("_isReversed"), try !flag("_hasFired"), try !flag("_finished") else {
-            throw SceneArchiveError.unsupported("Reversed or already fired action")
+        guard try !flag("_hasFired"), try !flag("_finished") else {
+            throw SceneArchiveError.unsupported("Already fired action")
+        }
+        if try flag("_isReversed") {
+            // Native archives store the already-negated deltas in the ordinary target fields.
+            guard ["SKMove", "SKRotate", "SKResize"].contains(name), try flag("_isRelative") else {
+                throw SceneArchiveError.unsupported("Reversed action")
+            }
         }
         let seconds = try number("_duration")
         guard seconds >= 0, seconds <= 31_536_000 else { throw SceneArchiveError.invalid("Invalid action duration") }
