@@ -183,7 +183,11 @@ mode, and particle Z position. Named particle textures use the same cached resol
 sprites. Targets must reference a node in the imported tree. Alpha/scale keyframes
 support linear interpolation with clamping. Standalone emitter archives are supported.
 
-Color keyframes, per-channel color ranges/speeds, animated color blending, particle
+Linear, clamped color keyframes support archived `NSColor` RGB and grayscale values,
+including alpha. The importer uses the stored RGB/white fallback directly; custom ICC
+profiles are not color-managed. Other color classes and color spaces are unsupported.
+
+Per-channel color ranges/speeds, animated color blending, particle
 actions, speed/rotation keyframes, fields, emission distance, and Z ranges/speeds are
 currently unsupported. Imported emitters start with no live particles and retain the
 engine's 10,000-live-particle cap; simulation is not intended to reproduce SpriteKit's
