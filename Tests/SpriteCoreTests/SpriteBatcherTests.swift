@@ -83,9 +83,10 @@ import Testing
         batcher.submit(SpriteQuad(texture: textureA))
         batcher.submit(SpriteQuad(texture: textureA, blendMode: .add))
         batcher.submit(SpriteQuad(texture: textureA, blendMode: .add))
+        batcher.submit(SpriteQuad(texture: textureA, blendMode: .screen))
         let frame = batcher.makeFrame()
-        #expect(frame.batches.map(\.blendMode) == [.alpha, .add])
-        #expect(frame.batches.map(\.indexRange) == [0 ..< 6, 6 ..< 18])
+        #expect(frame.batches.map(\.blendMode) == [.alpha, .add, .screen])
+        #expect(frame.batches.map(\.indexRange) == [0 ..< 6, 6 ..< 18, 18 ..< 24])
     }
 
     @Test func shaderBreaksBatches() {
