@@ -284,30 +284,42 @@ public extension Action {
     /// A leading slash starts at the tree root. Other paths start at the receiving node.
     /// Components are exact names, `.` (current node), or `..` (parent).
     /// A `//` prefix searches from the root; `.//` searches this node's descendants.
-    /// Wildcards and recursive separators inside a path are unsupported.
+    /// Within a path, `//` searches descendants of the preceding matches. Wildcards are unsupported.
     /// Lookup happens at playback time. A missing child is a no-op.
     /// This action completes immediately without waiting for the child's action.
     static func run(_ action: Action, onChildWithName name: String) -> Action {
         let fromRoot = name.hasPrefix("/")
-        let recursive = name.hasPrefix("//") || name.hasPrefix(".//")
-        let prefixLength = name.hasPrefix(".//") ? 3 : (name.hasPrefix("//") ? 2 : (fromRoot ? 1 : 0))
-        let path = String(name.dropFirst(prefixLength))
+        let path = fromRoot ? String(name.dropFirst()) : name
         let components = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
         return .run { node in
-            guard components.allSatisfy({ !$0.isEmpty }) else { return }
+            guard components.indices.allSatisfy({ index in
+                !components[index].isEmpty || (index + 1 < components.count
+                    && !components[index + 1].isEmpty
+                    && components[index + 1] != "." && components[index + 1] != "..")
+            }) else { return }
             var start = node
             if fromRoot {
                 while let parent = start.parent { start = parent }
             }
             var candidates = [start]
-            for (index, component) in components.enumerated() {
-                if recursive && index == 0 {
-                    guard component != "." && component != ".." else { return }
+            var recursive = false
+            for component in components {
+                if component.isEmpty {
+                    recursive = true
+                    continue
+                }
+                if recursive {
                     var matches: [Node] = []
-                    start.enumerateDescendants { descendant, _ in
-                        if descendant.name == component { matches.append(descendant) }
+                    var seen = Set<ObjectIdentifier>()
+                    for candidate in candidates {
+                        candidate.enumerateDescendants { descendant, _ in
+                            if descendant.name == component, seen.insert(ObjectIdentifier(descendant)).inserted {
+                                matches.append(descendant)
+                            }
+                        }
                     }
                     candidates = matches
+                    recursive = false
                     if candidates.isEmpty { return }
                     continue
                 }
