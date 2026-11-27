@@ -171,8 +171,52 @@ import SpriteCore
         #expect(frame.vertices.count == 4)
         #expect(frame.vertices.allSatisfy { $0.color == Color(red: 1, green: 0.5, blue: 0.5) })
         emitter.particleColorBlendFactor = 0
+        // Changing the emitter only affects newly born particles.
+        #expect(scene.makeFrame(viewportSize: [100, 100]).vertices == frame.vertices)
+        emitter.resetSimulation()
+        scene.advance(by: .seconds(0.1))
         #expect(scene.makeFrame(viewportSize: [100, 100]).vertices.allSatisfy { $0.color == .white })
         emitter.particleColorBlendFactor = 1
+        emitter.resetSimulation()
+        scene.advance(by: .seconds(0.1))
         #expect(scene.makeFrame(viewportSize: [100, 100]).vertices.allSatisfy { $0.color == .red })
+    }
+
+    @Test func blendVariancePersistsThroughRenderingAndRemoval() {
+        let emitter = makeEmitter()
+        emitter.particleBirthRate = 100
+        emitter.numParticlesToEmit = 10
+        emitter.particleColor = .red
+        emitter.particleColorBlendFactor = 0.5
+        emitter.particleColorBlendFactorRange = 0.5
+        emitter.evaluateActions(seconds: 0.1)
+        let factors = emitter.particles.colorBlendFactor
+        #expect(factors.count == 10)
+        #expect(factors.allSatisfy { (0.25 ... 0.75).contains($0) })
+        func frame() -> SpriteFrame {
+            var context = RenderContext()
+            emitter.draw(in: &context)
+            return context.batcher.makeFrame()
+        }
+        let first = frame()
+        #expect(frame().vertices == first.vertices)
+        for i in factors.indices {
+            #expect(first.vertices[i * 4].color == Color(red: 1, green: 1 - factors[i], blue: 1 - factors[i]))
+        }
+        emitter.particles.lifetime[0] = 0.01
+        emitter.evaluateActions(seconds: 0.02)
+        #expect(emitter.particles.colorBlendFactor == [factors[9]] + Array(factors[1..<9]))
+        #expect(frame().vertices.count == 36)
+        emitter.resetSimulation()
+        #expect(emitter.particles.colorBlendFactor.isEmpty)
+    }
+
+    @Test(arguments: [-2 as Float, 3 as Float])
+    func blendVarianceClampsAtBirth(base: Float) {
+        let emitter = makeEmitter()
+        emitter.particleColorBlendFactor = base
+        emitter.particleColorBlendFactorRange = 1
+        emitter.evaluateActions(seconds: 0.1)
+        #expect(emitter.particles.colorBlendFactor == [base < 0 ? 0 : 1])
     }
 }
