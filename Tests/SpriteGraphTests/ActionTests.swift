@@ -169,6 +169,29 @@ import SpriteCore
         #expect(target.position.x == 15 && later.position == .zero)
     }
 
+    @Test func chainedRecursiveSearchKeepsScopeAndMatchOrder() {
+        let scene = Scene(size: [100, 100])
+        let outer = Node(), inner = Node(), branch = Node(), wrapper = Node()
+        let first = Node(), second = Node(), outside = Node()
+        outer.name = "container"
+        inner.name = "container"
+        branch.name = "branch"
+        first.name = "target"
+        second.name = "target"
+        outside.name = "target"
+        scene.addChild(outside)
+        scene.addChild(outer)
+        outer.addChild(inner)
+        inner.addChild(branch)
+        branch.addChild(wrapper)
+        wrapper.addChild(first)
+        wrapper.addChild(second)
+        scene.run(.run(.move(by: [10, 0], duration: .zero), onChildWithName: "//container//branch//target"))
+        scene.advance(by: .milliseconds(1))
+        #expect(first.position.x == 10 && second.position == .zero && outside.position == .zero)
+        #expect(!scene.hasActions)
+    }
+
     @Test func relativeResizeComposesAndIgnoresPlainNodes() {
         let scene = Scene(size: [200, 100])
         let sprite = Sprite(color: .white, size: [20, 30])
