@@ -5,6 +5,41 @@ import SpriteGraph
 @testable import SpriteFormats
 
 @Suite struct SceneArchiveEmitterTests {
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func zeroSizeUsesResolvedTextureDimensions(format: String) throws {
+        let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/emitter-texture-size." + format)))
+        let texture = Texture(id: TextureID(rawValue: 7), textureSize: [80, 40])
+            .subtexture(inUnitRect: Rect(x: 0.25, y: 0, width: 0.5, height: 1))
+        let emitter = try #require(archive.makeNode(textureResolver: { _ in texture }) as? ParticleEmitter)
+        #expect(emitter.particleSize == nil)
+        let scene = Scene(size: [100, 100])
+        scene.addChild(emitter)
+        scene.advance(by: .seconds(1))
+        let frame = scene.makeFrame(viewportSize: [100, 100])
+        #expect(frame.vertices.count == 4)
+        let xs = frame.vertices.map(\.position.x)
+        let ys = frame.vertices.map(\.position.y)
+        #expect(try #require(xs.max()) - #require(xs.min()) == 40)
+        #expect(try #require(ys.max()) - #require(ys.min()) == 40)
+        #expect(frame.batches.first?.texture == texture.id)
+        // A later texture assignment still controls an implicit particle size.
+        emitter.particleTexture = Texture(id: TextureID(rawValue: 8), textureSize: [20, 10])
+        let changed = scene.makeFrame(viewportSize: [100, 100])
+        let changedX = changed.vertices.map(\.position.x)
+        #expect(try #require(changedX.max()) - #require(changedX.min()) == 20)
+    }
+
+    @MainActor @Test func preservesExplicitAndUntexturedSizes() throws {
+        let graph = try graph()
+        let texture = Texture(id: TextureID(rawValue: 1), textureSize: [80, 40])
+        for size in ["{0, 0}", "{0, 10}", "{10, 0}", "{12, 8}"] {
+            let archive = try ArchiveEmitter(["_startSize": .string(size)], graph: graph)
+            #expect(archive.makeEmitter(texture: nil).particleSize == archive.size)
+            let emitter = archive.makeEmitter(texture: texture)
+            #expect(emitter.particleSize == (archive.size == .zero ? nil : archive.size))
+        }
+    }
+
     @MainActor @Test func restoresBlendVariance() throws {
         let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/emitter-blend.sks")))
         let emitter = try #require(archive.makeNode() as? ParticleEmitter)
