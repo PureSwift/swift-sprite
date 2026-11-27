@@ -214,13 +214,22 @@ struct ArchiveActionDecoder {
             action = try flag("_isRelative") ? .rotate(by: angle, duration: duration)
                 : .rotate(to: angle, duration: duration, shortestUnitArc: flag("_isUnitArc"))
         case "SKScale":
-            guard try !flag("_isTargetSizeBased") else {
-                throw SceneArchiveError.unsupported("Size-based scale action")
-            }
             let useX = try flag("_useX"), useY = try flag("_useY")
             guard useX || useY else { throw SceneArchiveError.invalid("Scale action without axes") }
             let target = try Vector2(number("_scaleTargetX"), number("_scaleTargetY"))
-            if try flag("_isRelative") {
+            if try flag("_isTargetSizeBased") {
+                guard useX && useY, try !flag("_isRelative") else {
+                    throw SceneArchiveError.unsupported("Relative or single-axis size-based scale action")
+                }
+                guard try !graph.isNull(fields["_targetSize"]) else {
+                    throw SceneArchiveError.invalid("Missing scale target size")
+                }
+                let size = try graph.vector(fields["_targetSize"], default: .zero)
+                guard size.x.isFinite && size.y.isFinite else {
+                    throw SceneArchiveError.invalid("Invalid scale target size")
+                }
+                action = .scale(toSize: size, duration: duration)
+            } else if try flag("_isRelative") {
                 guard useX && useY else {
                     throw SceneArchiveError.unsupported("Single-axis relative scale action")
                 }
