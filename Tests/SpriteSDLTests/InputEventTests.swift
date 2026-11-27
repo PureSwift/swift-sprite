@@ -4,6 +4,15 @@ import SDL3Swift
 @testable import SpriteSDL
 
 @Suite struct InputEventTests {
+    @Test func screenTexturePremultiplicationPreservesTransparency() {
+        let pixels = PixelBuffer(width: 3, height: 1,
+            pixels: [255, 128, 64, 0, 255, 128, 64, 128, 255, 128, 64, 255])
+        let result = SDLRenderBackend.premultiplied(pixels)
+        #expect(result.pixels == [0, 0, 0, 0, 128, 64, 32, 128, 255, 128, 64, 255])
+        #expect(result.size == pixels.size)
+        #expect(pixels.pixels[0] == 255)
+    }
+
     private func convert(_ event: SDLEvent) -> InputEvent? {
         InputEvent(event, drawableSize: [800, 600], windowToRender: { $0 * 2 })
     }
