@@ -319,6 +319,31 @@ final class DemoScene: Scene {
     }
 }
 
+/// Explicitly selects standard archive layouts for custom node names.
+func customNodeClasses(arguments: [String]) throws -> [String: SpriteKitSceneArchive.NodeClass] {
+    var mappings: [String: SpriteKitSceneArchive.NodeClass] = [:]
+    for index in arguments.indices where arguments[index] == "--class" {
+        guard arguments.contains("--sks"), !arguments.contains("--tmx"),
+              arguments.indices.contains(index + 1) else {
+            throw SceneArchiveError.invalid("--class requires --sks and a CustomName=SKNodeClass value")
+        }
+        let parts = arguments[index + 1].split(separator: "=", omittingEmptySubsequences: false)
+        guard parts.count == 2, !parts[0].isEmpty,
+              SpriteKitSceneArchive.NodeClass(rawValue: String(parts[0])) == nil,
+              let nodeClass = SpriteKitSceneArchive.NodeClass(rawValue: String(parts[1])) else {
+            let choices = SpriteKitSceneArchive.NodeClass.allCases.map(\.rawValue).joined(separator: ", ")
+            throw SceneArchiveError.invalid("Invalid --class mapping; use CustomName=Class with one of: " + choices)
+        }
+        let name = String(parts[0])
+        guard mappings[name] == nil else {
+            throw SceneArchiveError.invalid("Duplicate --class mapping for " + name)
+        }
+        mappings[name] = nodeClass
+    }
+    return mappings
+}
+
+let nodeClassMappings = try customNodeClasses(arguments: Array(CommandLine.arguments.dropFirst()))
 let window = try SpriteSDL.SDLWindow(title: "sprite-viewer", width: 960, height: 640)
 let backend = SDLRenderBackend(window: window)
 
@@ -350,7 +375,7 @@ if let option = CommandLine.arguments.firstIndex(of: "--tmx") {
         throw SceneArchiveError.invalid("Usage: sprite-viewer --sks path/to/scene.sks")
     }
     let url = URL(fileURLWithPath: CommandLine.arguments[option + 1])
-    let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: url))
+    let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: url), customNodeClasses: nodeClassMappings)
     for diagnostic in archive.diagnostics { print(diagnostic) }
     var tileSets: [String: SpriteKitTileSetArchive] = [:]
     if let setsOption = CommandLine.arguments.firstIndex(of: "--tilesets") {
