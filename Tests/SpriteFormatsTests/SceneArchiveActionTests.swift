@@ -5,6 +5,74 @@ import SpriteGraph
 @testable import SpriteFormats
 
 @Suite struct SceneArchiveActionTests {
+    @MainActor private final class PlaybackLog {
+        var nodes: [String] = []
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func resolvesAndSchedulesSounds(format: String) throws {
+        let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/sound-actions." + format)))
+        #expect(throws: SceneArchiveError.missingSound("beep.wav")) { try archive.makeNode() }
+        let log = PlaybackLog()
+        var requests = 0
+        let scene = try #require(archive.makeNode(soundResolver: { name in
+            requests += 1
+            #expect(name == "beep.wav")
+            return { node in log.nodes.append(node.name ?? "") }
+        }) as? Scene)
+        #expect(requests == 1 && log.nodes.isEmpty)
+        let waiting = try #require(scene.children.first { $0.name == "waiting" })
+        let immediate = try #require(scene.children.first { $0.name == "immediate" })
+        scene.isPaused = true
+        scene.advance(by: .seconds(1))
+        #expect(log.nodes.isEmpty)
+        scene.isPaused = false
+        scene.advance(by: .milliseconds(125))
+        #expect(log.nodes == ["waiting", "immediate"])
+        #expect(waiting.position.x == 0 && immediate.position.x == 5)
+        scene.advance(by: .milliseconds(250))
+        #expect(log.nodes.count == 2)
+        #expect(waiting.position.x == 5 && immediate.position.x == 10)
+        waiting.removeAllActions()
+        scene.advance(by: .seconds(1))
+        #expect(log.nodes.count == 2 && waiting.position.x == 5)
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func repeatsLibrarySounds(format: String) throws {
+        let library = try SpriteKitActionArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/sound-library." + format)))
+        #expect(throws: SceneArchiveError.missingSound("beep.wav")) { try library.makeAction(named: "Beep") }
+        let log = PlaybackLog()
+        var requests = 0
+        let action = try #require(try library.makeAction(named: "Beep", soundResolver: { _ in
+            requests += 1
+            return { node in log.nodes.append(node.name ?? "") }
+        }))
+        #expect(requests == 1 && log.nodes.isEmpty)
+        let scene = Scene(size: [100, 100])
+        scene.name = "scene"
+        scene.run(action)
+        scene.advance(by: .milliseconds(375))
+        #expect(log.nodes == ["scene", "scene"])
+        scene.advance(by: .seconds(1))
+        #expect(!scene.hasActions && log.nodes.count == 2)
+        scene.run(action)
+        scene.removeAllActions()
+        scene.advance(by: .seconds(1))
+        #expect(log.nodes.count == 2)
+    }
+
+    @Test func rejectsMalformedSoundActions() throws {
+        for fields: [String: PropertyValue] in [[:], ["_fileName": .string("")],
+            ["_fileName": .string("beep"), "_wait": .bool(false), "_duration": .number(1)],
+            ["_fileName": .string("beep"), "_position": .string("{1, 2}")],
+            ["_fileName": .string("beep"), "_wait": .string("yes")]] {
+            let (graph, node) = try archive(actionFields: fields, className: "SKPlaySound")
+            var decoder = ArchiveActionDecoder(graph: graph)
+            #expect(throws: SceneArchiveError.self) { try decoder.actions(node) }
+        }
+    }
+
     @MainActor @Test(arguments: ["sks", "xml"])
     func loadsNamedActionLibraries(format: String) async throws {
         let library = try await SpriteKitActionArchive.decode(at: Fixtures.url("SceneArchives/action-library." + format))
@@ -181,7 +249,7 @@ import SpriteGraph
             var decoder = ArchiveActionDecoder(graph: graph)
             #expect(throws: SceneArchiveError.self) { try decoder.actions(node) }
         }
-        for name in ["SKRunBlock", "SKPlaySound", "CustomAction"] {
+        for name in ["SKRunBlock", "CustomAction"] {
             let (graph, node) = try archive(actionFields: [:], className: name)
             var decoder = ArchiveActionDecoder(graph: graph)
             #expect(throws: SceneArchiveError.unsupported("Action class \(name)")) { try decoder.actions(node) }
