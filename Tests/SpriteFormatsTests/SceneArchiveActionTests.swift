@@ -583,7 +583,7 @@ import SpriteGraph
             [:], ["_action": .null], ["_subSpriteKey": .string("")],
             ["_subSpriteKey": .string("///target")], ["_subSpriteKey": .string("*")],
             ["_subSpriteKey": .string("/")], ["_subSpriteKey": .string("container/")],
-            ["_subSpriteKey": .string("container//target")], ["_subSpriteKey": .string("../") ],
+            ["_subSpriteKey": .string("container///target")], ["_subSpriteKey": .string("container//")], ["_subSpriteKey": .string("container//..")], ["_subSpriteKey": .string("../") ],
             ["_duration": .number(1)], ["_waitForKeyedAction": .bool(true)],
             ["_actionKey": .string("key")], ["_runOnSubSprite": .bool(false)]
         ] {
@@ -649,6 +649,19 @@ import SpriteGraph
         scene.advance(by: .seconds(1))
         #expect(outside.position == [10, 0] && nested.position == [0, 5])
         #expect(!outside.hasActions && !nested.hasActions && !caller.hasActions)
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresEmbeddedRecursiveSearch(format: String) throws {
+        let scene = try #require(SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/embedded-search-actions." + format))).makeNode() as? Scene)
+        let outside = scene.children[0]
+        let target = try #require(scene.children[1].children.first?.children.first)
+        scene.advance(by: .milliseconds(500))
+        #expect(target.position.x == 5 && outside.position == .zero)
+        scene.advance(by: .milliseconds(500))
+        #expect(target.position.x == 10 && !target.hasActions && !scene.hasActions)
+        #expect(!outside.hasActions)
     }
 
     @Test func rejectsInvalidScaleActions() throws {
