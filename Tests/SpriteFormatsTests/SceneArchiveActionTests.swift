@@ -264,6 +264,32 @@ import SpriteGraph
         #expect(independent.color == .blue && independent.colorBlendFactor == 0)
     }
 
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresIndependentScaleAxes(format: String) throws {
+        let scene = try #require(SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/axis-scale-actions." + format))).makeNode() as? Scene)
+        scene.advance(by: .seconds(1))
+        #expect(scene.children.map(\.scale) == [[3, 3], [2, 0.5], [3, 0.5]])
+        scene.children[0].scale.y = 9
+        scene.children[1].scale.x = 8
+        scene.advance(by: .seconds(1))
+        #expect(scene.children.map(\.scale) == [[4, 9], [8, -2], [4, -2]])
+        #expect(scene.children.allSatisfy { !$0.hasActions })
+    }
+
+    @Test func rejectsInvalidScaleActions() throws {
+        for fields: [String: PropertyValue] in [
+            ["_useX": .bool(false), "_useY": .bool(false)],
+            ["_useX": .bool(true), "_scaleTargetX": .number(.infinity)],
+            ["_useY": .bool(true), "_isTargetSizeBased": .bool(true)],
+            ["_useX": .bool(true), "_isRelative": .bool(true)]
+        ] {
+            let (graph, node) = try archive(actionFields: fields, className: "SKScale")
+            var decoder = ArchiveActionDecoder(graph: graph)
+            #expect(throws: SceneArchiveError.self) { try decoder.actions(node) }
+        }
+    }
+
     @Test func rejectsMalformedColorActions() throws {
         let valid: [String: PropertyValue] = [
             "_duration": .number(1), "_colorMix": .number(0.5), "_isMixOnly": .bool(false),
