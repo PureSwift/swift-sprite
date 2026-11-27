@@ -252,3 +252,20 @@ for index in tileObjects.indices {
 externalArchive["$objects"] = tileObjects
 try PropertyListSerialization.data(fromPropertyList: externalArchive, format: .binary, options: 0)
     .write(to: directory.appendingPathComponent("tiles-external.sks"))
+
+let croppedTile = SKTexture(rect: CGRect(x: 0.5, y: 0, width: 0.5, height: 1), in: tileTexture)
+let animatedTile = SKTileDefinition(textures: [tileTexture, croppedTile],
+    size: CGSize(width: 16, height: 16), timePerFrame: 0.25)
+let animatedGroup = SKTileGroup(tileDefinition: animatedTile)
+let animatedSet = SKTileSet(tileGroups: [animatedGroup, groupB], tileSetType: .grid)
+let animatedMap = SKTileMapNode(tileSet: animatedSet, columns: 3, rows: 1,
+    tileSize: CGSize(width: 16, height: 16))
+animatedMap.enableAutomapping = false
+animatedMap.setTileGroup(animatedGroup, forColumn: 0, row: 0)
+animatedMap.setTileGroup(animatedGroup, forColumn: 1, row: 0)
+animatedMap.setTileGroup(groupB, forColumn: 2, row: 0)
+let animatedArchive = try tilePlist(animatedMap)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: animatedArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("tiles-animated." + suffix))
+}
