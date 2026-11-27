@@ -299,6 +299,53 @@ func run(_ world: PhysicsWorld, seconds: Double) {
         #expect(position(continuous: true) < 0)
     }
 
+    @Test func pinnedOffsetBodyRotatesAroundOrigin() throws {
+        let world = PhysicsWorld()
+        let body = PhysicsBody(shape: .circle(radius: 5, center: [30, 0]), position: [10, 100])
+        body.isPinned = true
+        body.angularDamping = 0
+        world.add(body)
+        #expect(b2Body_GetJointCount(try #require(body.bodyID)) == 1)
+        run(world, seconds: 0.5)
+        #expect(approx(body.position, [10, 100], tolerance: 0.1))
+        #expect(body.rotation < -0.1)
+        #expect(body.worldCenter.y < 100)
+        body.position = [100, 200]
+        run(world, seconds: 0.5)
+        #expect(approx(body.position, [100, 200], tolerance: 0.1))
+        body.allowsRotation = false
+        let angle = body.rotation
+        run(world, seconds: 0.2)
+        #expect(approx(body.rotation, angle, tolerance: 0.001))
+        body.isPinned = false
+        #expect(b2Body_GetJointCount(try #require(body.bodyID)) == 0)
+        run(world, seconds: 0.5)
+        #expect(body.position.y < 150)
+    }
+
+    @Test func pinnedBodyLifecycle() throws {
+        let world = PhysicsWorld()
+        let body = PhysicsBody(circleOfRadius: 5)
+        world.add(body)
+        body.isPinned = true
+        #expect(b2Body_GetJointCount(try #require(body.bodyID)) == 1)
+        body.isPinned = true
+        #expect(b2Body_GetJointCount(try #require(body.bodyID)) == 1)
+        body.isDynamic = false
+        #expect(b2Body_GetJointCount(try #require(body.bodyID)) == 0)
+        body.isDynamic = true
+        #expect(b2Body_GetJointCount(try #require(body.bodyID)) == 1)
+        world.remove(body)
+        #expect(body.bodyID == nil)
+        body.position = [50, 100]
+        let other = PhysicsWorld()
+        other.add(body)
+        #expect(b2Body_GetJointCount(try #require(body.bodyID)) == 1)
+        run(other, seconds: 0.5)
+        #expect(approx(body.position, [50, 100], tolerance: 0.01))
+        #expect(other.bodies.count == 1 && other.joints.isEmpty)
+    }
+
     @Test func removingBodiesClearsWorld() {
         let (world, ground) = makeWorld()
         #expect(ground.world === world)
