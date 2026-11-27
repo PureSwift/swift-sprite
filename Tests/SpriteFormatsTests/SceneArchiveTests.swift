@@ -6,6 +6,81 @@ import SpriteGraph
 
 @Suite struct SceneArchiveTests {
     @MainActor @Test(arguments: ["sks", "xml"])
+    func resolvesNativeReferences(format: String) throws {
+        let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/references." + format)))
+        let target = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/reference-target." + format)))
+        #expect(archive.referenceNames == ["ReferenceTarget"])
+        #expect(throws: SceneArchiveError.missingReference("ReferenceTarget")) { try archive.makeNode() }
+        var references = 0, textures = 0
+        let scene = try #require(archive.makeNode(textureResolver: { _ in
+            textures += 1
+            return Texture(id: TextureID(rawValue: 1), textureSize: [80, 40])
+        }, referenceResolver: { name in
+            references += 1
+            #expect(name == "ReferenceTarget")
+            return target
+        }) as? Scene)
+        #expect(references == 1 && textures == 1)
+        #expect(scene.children.count == 2)
+        let first = try #require(scene.children.first?.children.first)
+        let second = try #require(scene.children.last?.children.first)
+        #expect(!(first is Scene) && !(second is Scene) && first !== second)
+        let a = try #require(first.children.first as? Sprite)
+        let b = try #require(second.children.first as? Sprite)
+        #expect(a !== b && a.name == "content" && b.name == "content")
+        #expect(a.worldMatrix.transform(point: .zero) == [25, 17])
+        #expect(b.worldMatrix.transform(point: .zero) == [85, 17])
+        a.position.x = 99
+        #expect(b.position == [5, 7])
+        #expect(scene.makeFrame(viewportSize: [200, 100]).vertices.count == 8)
+    }
+
+    private func referenceArchive(_ name: String, scale: Float = 1) throws -> SpriteKitSceneArchive {
+        let data = try PropertyListSerialization.data(fromPropertyList: [
+            "$archiver": "NSKeyedArchiver", "$version": 100_000,
+            "$top": ["root": ["CF$UID": 1]],
+            "$objects": ["$null", ["$class": ["CF$UID": 2], "_referenceFileName": name, "_xScale": scale],
+                ["$classname": "SKReferenceNode"]]
+        ], format: .xml, options: 0)
+        return try SpriteKitSceneArchive.decode(data)
+    }
+
+    @MainActor @Test func rejectsCyclicAndExcessivelyDeepReferences() throws {
+        #expect(throws: SceneArchiveError.invalid("Missing reference node filename")) { try referenceArchive("") }
+        let archive = try referenceArchive("self")
+        #expect(throws: SceneArchiveError.invalid("Cyclic reference node: self")) {
+            try archive.makeNode(referenceResolver: { _ in archive })
+        }
+        let start = try referenceArchive("0")
+        #expect(throws: SceneArchiveError.invalid("Excessive reference expansion")) {
+            try start.makeNode(referenceResolver: { name in try referenceArchive(String((Int(name) ?? 0) + 1)) })
+        }
+    }
+
+    @MainActor @Test func resolvesNestedReferenceNames() throws {
+        let start = try referenceArchive("nested.sks")
+        let middle = try referenceArchive("leaf")
+        let target = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/reference-target.sks")))
+        var requested: [String] = []
+        let root = try start.makeNode(textureResolver: { _ in
+            Texture(id: TextureID(rawValue: 1), textureSize: [80, 40])
+        }, referenceResolver: { name in
+            requested.append(name)
+            return name == "nested.sks" ? middle : target
+        })
+        #expect(requested == ["nested.sks", "leaf"])
+        #expect(root.children.first?.children.first?.children.first is Sprite)
+    }
+
+    @MainActor @Test func rejectsPhysicsUnderScaledReferences() throws {
+        let archive = try referenceArchive("physics", scale: 2)
+        let target = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/physics.sks")))
+        #expect(throws: SceneArchiveError.unsupported("Physics bodies under scaled reference nodes")) {
+            try archive.makeNode(referenceResolver: { _ in target })
+        }
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
     func loadsNativeArchive(format: String) async throws {
         let archive = try await SpriteKitSceneArchive.decode(at: Fixtures.url("SceneArchives/scene." + format))
         let backend = MockBackend()
