@@ -82,6 +82,7 @@ struct ArchiveNodeAction: Sendable {
 indirect enum ArchiveAction: Sendable {
     case ready(Action)
     case animation([ArchiveTexture], Duration, resize: Bool, restore: Bool)
+    case setTexture(ArchiveTexture, resize: Bool)
     case sound(String, Duration)
     case sequence([ArchiveAction])
     case group([ArchiveAction])
@@ -94,6 +95,7 @@ indirect enum ArchiveAction: Sendable {
         case let .ready(action): return action
         case let .sound(name, duration):
             return .sequence([.run(try sound(name)), .wait(for: duration)])
+        case let .setTexture(frame, resize): return .setTexture(try texture(frame), resize: resize)
         case let .animation(frames, time, resize, restore):
             return .animate(with: try frames.map(texture), timePerFrame: time, resize: resize, restore: restore)
         case let .sequence(children): return .sequence(try children.map { try $0.makeAction(texture: texture, sound: sound) })
@@ -110,6 +112,7 @@ indirect enum ArchiveAction: Sendable {
         switch self {
         case let .ready(action): return action
         case let .sound(_, duration): return .wait(for: duration)
+        case .setTexture: return .wait(for: .zero)
         case let .animation(frames, time, _, _): return .wait(for: time * frames.count)
         case let .sequence(children): return .sequence(children.map(\.timingAction))
         case let .group(children): return .group(children.map(\.timingAction))
@@ -303,13 +306,24 @@ struct ArchiveActionDecoder {
             }
             budget -= values.count
             guard case let .number(time) = try graph.resolve(fields["_timePerFrame"]),
-                  time.isFinite, time >= 1e-9, time <= 31_536_000,
+                  time.isFinite, time >= 0, time <= 31_536_000,
                   abs(time * Double(values.count) - Double(seconds)) < max(0.00001, Double(seconds) * 0.00001) else {
                 throw SceneArchiveError.unsupported("Invalid or retimed texture animation")
             }
             let frames = try values.map { try ArchiveTexture($0, graph: graph) }
-            let animation = ArchiveAction.animation(frames, .seconds(time),
-                resize: try flag("_resize"), restore: try flag("_restore"))
+            let animation: ArchiveAction
+            if time == 0 {
+                guard seconds == 0, frames.count == 1, try !flag("_restore") else {
+                    throw SceneArchiveError.unsupported("Invalid instantaneous texture action")
+                }
+                animation = .setTexture(frames[0], resize: try flag("_resize"))
+            } else {
+                guard time >= 1e-9 else {
+                    throw SceneArchiveError.unsupported("Invalid texture frame duration")
+                }
+                animation = .animation(frames, .seconds(time),
+                    resize: try flag("_resize"), restore: try flag("_restore"))
+            }
             deferred = animation
             action = animation.timingAction
         case "SKSequence", "SKGroup":
