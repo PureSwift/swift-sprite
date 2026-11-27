@@ -60,8 +60,8 @@ extension Action {
             }
         case let .scaleTo(x, y):
             return interpolating(from: { $0.scale }) { node, start, t in
-                let target = Vector2(x ?? start.x, y ?? start.y)
-                node.scale = start + (target - start) * t
+                if let x { node.scale.x = start.x + (x - start.x) * t }
+                if let y { node.scale.y = start.y + (y - start.y) * t }
             }
         case let .fade(by: delta):
             return incremental { node, step in node.alpha += delta * step }
