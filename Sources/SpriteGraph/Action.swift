@@ -283,12 +283,15 @@ public extension Action {
     /// Starts an independent action on the first match for a child path.
     /// A leading slash starts at the tree root. Other paths start at the receiving node.
     /// Components are exact names, `.` (current node), or `..` (parent).
-    /// Recursive and wildcard searches are unsupported.
+    /// A `//` prefix searches from the root; `.//` searches this node's descendants.
+    /// Wildcards and recursive separators inside a path are unsupported.
     /// Lookup happens at playback time. A missing child is a no-op.
     /// This action completes immediately without waiting for the child's action.
     static func run(_ action: Action, onChildWithName name: String) -> Action {
         let fromRoot = name.hasPrefix("/")
-        let path = fromRoot ? String(name.dropFirst()) : name
+        let recursive = name.hasPrefix("//") || name.hasPrefix(".//")
+        let prefixLength = name.hasPrefix(".//") ? 3 : (name.hasPrefix("//") ? 2 : (fromRoot ? 1 : 0))
+        let path = String(name.dropFirst(prefixLength))
         let components = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
         return .run { node in
             guard components.allSatisfy({ !$0.isEmpty }) else { return }
@@ -297,7 +300,17 @@ public extension Action {
                 while let parent = start.parent { start = parent }
             }
             var candidates = [start]
-            for component in components {
+            for (index, component) in components.enumerated() {
+                if recursive && index == 0 {
+                    guard component != "." && component != ".." else { return }
+                    var matches: [Node] = []
+                    start.enumerateDescendants { descendant, _ in
+                        if descendant.name == component { matches.append(descendant) }
+                    }
+                    candidates = matches
+                    if candidates.isEmpty { return }
+                    continue
+                }
                 if component == "." { continue }
                 if component == ".." {
                     var seen = Set<ObjectIdentifier>()
