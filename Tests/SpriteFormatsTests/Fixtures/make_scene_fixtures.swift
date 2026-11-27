@@ -461,3 +461,25 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: customArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("custom-classes." + suffix))
 }
+
+let colorScene = SKScene(size: CGSize(width: 200, height: 100))
+let colorActions = [
+    SKAction.colorize(with: .red, colorBlendFactor: 0.75, duration: 2),
+    SKAction.colorize(withColorBlendFactor: 0.2, duration: 2),
+    SKAction.repeat(SKAction.sequence([
+        SKAction.colorize(with: .red, colorBlendFactor: 1, duration: 0.5),
+        SKAction.colorize(with: .blue, colorBlendFactor: 0, duration: 0.5)
+    ]), count: 2)
+]
+for (index, action) in colorActions.enumerated() {
+    let sprite = SKSpriteNode(color: .blue, size: CGSize(width: 20, height: 20))
+    sprite.colorBlendFactor = index == 1 ? 0.8 : 0
+    sprite.position.x = CGFloat(index * 40)
+    sprite.run(action, withKey: "color")
+    colorScene.addChild(sprite)
+}
+let colorActionArchive = try tilePlist(colorScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: colorActionArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("color-actions." + suffix))
+}
