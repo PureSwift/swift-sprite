@@ -6,6 +6,21 @@ import SpriteGraph
 
 @Suite struct SceneArchiveEmitterTests {
     @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresScreenBlending(format: String) throws {
+        let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/screen-blend." + format)))
+        let scene = try #require(archive.makeNode(textureResolver: { _ in
+            Texture(id: TextureID(rawValue: 1), textureSize: [80, 40])
+        }) as? Scene)
+        let sprite = try #require(scene.children.first as? Sprite)
+        let emitter = try #require(scene.children.last as? ParticleEmitter)
+        #expect(sprite.blendMode == .screen && emitter.particleBlendMode == .screen)
+        scene.advance(by: .seconds(1))
+        let frame = scene.makeFrame(viewportSize: [100, 100])
+        #expect(frame.vertices.count == 8)
+        #expect(frame.batches.allSatisfy { $0.blendMode == .screen })
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
     func zeroSizeUsesResolvedTextureDimensions(format: String) throws {
         let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/emitter-texture-size." + format)))
         let texture = Texture(id: TextureID(rawValue: 7), textureSize: [80, 40])
