@@ -573,3 +573,21 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: speedArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("speed-actions." + suffix))
 }
+
+let reversedScene = SKScene(size: CGSize(width: 100, height: 100))
+for action in [
+    SKAction.moveBy(x: 10, y: -20, duration: 2),
+    SKAction.rotate(byAngle: 1, duration: 2),
+    SKAction.resize(byWidth: 10, height: -10, duration: 2)
+] {
+    let sprite = SKSpriteNode(color: .white, size: CGSize(width: 20, height: 30))
+    sprite.position = CGPoint(x: 5, y: 7)
+    sprite.zRotation = 0.5
+    sprite.run(.sequence([action.reversed(), action]), withKey: "round-trip")
+    reversedScene.addChild(sprite)
+}
+let reversedArchive = try tilePlist(reversedScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: reversedArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("reversed-actions." + suffix))
+}
