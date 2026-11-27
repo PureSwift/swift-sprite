@@ -426,3 +426,16 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: edgeArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("edge-physics." + suffix))
 }
+
+let pinnedScene = SKScene(size: CGSize(width: 400, height: 400))
+let pinnedNode = SKNode()
+pinnedNode.position = CGPoint(x: 100, y: 200)
+pinnedNode.physicsBody = SKPhysicsBody(circleOfRadius: 12, center: CGPoint(x: 30, y: 0))
+pinnedNode.physicsBody?.pinned = true
+pinnedNode.physicsBody?.angularDamping = 0
+pinnedScene.addChild(pinnedNode)
+let pinnedArchive = try tilePlist(pinnedScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: pinnedArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("pinned-physics." + suffix))
+}
