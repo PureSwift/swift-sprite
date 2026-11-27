@@ -374,9 +374,14 @@ After building the viewer, run:
 python3 Scripts/smoke-viewer.py "$(swift build --show-bin-path)/sprite-viewer"
 ```
 
+The viewer does not yet provide audio playback. Use `--mute` with `--sks` to preview
+scenes containing sound actions, including referenced scenes. It reports each muted
+sound once and preserves archived action waits without loading audio files. Without
+`--mute`, sound actions still fail with a missing-sound error.
+
 The script uses SDL's dummy video driver and software renderer, requires clean exits
-and completed frames for successful loads, and treats timeouts as failures. Its 18
-checks cover custom classes, references, source/compiled atlases, physics fixtures,
+and completed frames for successful loads, and treats timeouts as failures. Its 23
+checks cover custom classes, references, muted sound actions, source/compiled atlases, physics fixtures,
 and invalid options or resources. Temporary derived archives stay outside the repository.
 The `Viewer smoke tests` workflow builds the viewer, runs the full Swift test suite,
 and runs these checks on pushes and pull requests.
