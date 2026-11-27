@@ -179,8 +179,9 @@ pause settings still apply. This is not a snapshot/resume mechanism for running 
 
 Texture flipbooks resolve every frame through the scene texture resolver and shared
 cache, including atlas subrects. They support uniform frame timing, optional resizing,
-and restoration on normal completion. Restoration when an action is cancelled is not
-yet supported. Editor archives may save scenes and sprites paused; unpause the desired
+and restoration on completion or cancellation, including keyed replacement and nested
+actions. Only animations that have started and are still active restore their texture.
+Editor archives may save scenes and sprites paused; unpause the desired
 nodes explicitly to start playback.
 
 Particle emitters restore birth rate/count, lifetime, spawn position/range, speed and
