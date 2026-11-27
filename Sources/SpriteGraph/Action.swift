@@ -53,6 +53,7 @@ public struct Action: Sendable {
         case fade(by: Float)
         case fadeTo(Float)
         case resize(width: Float?, height: Float?)
+        case resizeBy(Vector2)
         case colorize(Color?, blendFactor: Float)
         case animate([Texture], resize: Bool, restore: Bool)
         case setTexture(Texture, resize: Bool)
@@ -197,6 +198,21 @@ public extension Action {
 
     static var unhide: Action {
         Action(.hide(false), seconds: 0)
+    }
+
+    /// Changes a sprite's size by an additive amount.
+    static func resize(by delta: Vector2, duration: Duration) -> Action {
+        Action(.resizeBy(delta), duration: duration)
+    }
+
+    /// Animates only a sprite's width.
+    static func resizeTo(width: Float, duration: Duration) -> Action {
+        Action(.resize(width: width, height: nil), duration: duration)
+    }
+
+    /// Animates only a sprite's height.
+    static func resizeTo(height: Float, duration: Duration) -> Action {
+        Action(.resize(width: nil, height: height), duration: duration)
     }
 
     /// Animates a ``Sprite``'s size.
