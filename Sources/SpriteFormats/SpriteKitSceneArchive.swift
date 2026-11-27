@@ -9,6 +9,7 @@ public enum SceneArchiveError: Error, Equatable, Sendable {
     case missingFont(String)
     case missingTileSet(String)
     case missingReference(String)
+    case missingSound(String)
 }
 
 /// Reads binary or XML SpriteKit keyed archives through Foundation.
@@ -234,17 +235,20 @@ public struct SpriteKitSceneArchive: Sendable {
         return SpriteKitSceneArchive(rootID: graph.rootID, records: records, diagnostics: diagnostics)
     }
 
-    /// Resolvers supply backend-owned textures and bitmap/SDF fonts.
+    /// Resolvers supply backend-owned textures, fonts, referenced archives, and sound callbacks.
+    /// Sound callbacks run when their actions start; waiting uses archived action duration.
     /// Return the named image or atlas entry before the archive's texture-rect crop.
     @MainActor public func makeNode(
         textureResolver: (TextureReference) throws -> Texture? = { _ in nil },
         fontResolver: (String) throws -> BitmapFont? = { _ in nil },
         tileSetResolver: (String) throws -> SpriteKitTileSetArchive? = { _ in nil },
-        referenceResolver: (String) throws -> SpriteKitSceneArchive? = { _ in nil }
+        referenceResolver: (String) throws -> SpriteKitSceneArchive? = { _ in nil },
+        soundResolver: (String) throws -> Action.Block? = { _ in nil }
     ) throws -> Node {
         var textures: [TextureReference: Texture] = [:]
         var fonts: [String: BitmapFont] = [:]
         var tileSets: [String: SpriteKitTileSetArchive] = [:]
+        var sounds: [String: Action.Block] = [:]
         func resolveTexture(_ reference: TextureReference, rect: Rect) throws -> Texture {
             if textures[reference] == nil {
                 guard let texture = try textureResolver(reference) else {
@@ -337,7 +341,13 @@ public struct SpriteKitSceneArchive: Sendable {
                 node.speed = record.speed
                 node.physicsBody = record.physicsBody?.makeBody()
                 for action in record.actions {
-                    let resolved = try action.action.makeAction { try resolveTexture($0.reference, rect: $0.rect) }
+                    let resolved = try action.action.makeAction(texture: { try resolveTexture($0.reference, rect: $0.rect) },
+                        sound: { name in
+                            if let playback = sounds[name] { return playback }
+                            guard let playback = try soundResolver(name) else { throw SceneArchiveError.missingSound(name) }
+                            sounds[name] = playback
+                            return playback
+                        })
                     node.run(resolved, withKey: action.key)
                 }
                 nodes[record.id] = node
