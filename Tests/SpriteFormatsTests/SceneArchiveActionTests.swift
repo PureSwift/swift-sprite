@@ -162,6 +162,74 @@ import SpriteGraph
         #expect(!cancelled.hasActions)
     }
 
+    @MainActor @Test(arguments: ["sks", "xml"], [false, true])
+    func restoresScheduledTextureReplacement(format: String, preserveSize: Bool) throws {
+        let data = try Data(contentsOf: Fixtures.url("SceneArchives/set-texture-actions." + format))
+        var plist = try #require(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        if preserveSize {
+            var objects = try #require(plist["$objects"] as? [Any])
+            for index in objects.indices {
+                guard var fields = objects[index] as? [String: Any], fields["_textures"] != nil else { continue }
+                fields["_resize"] = false
+                objects[index] = fields
+            }
+            plist["$objects"] = objects
+        }
+        let archive = try SpriteKitSceneArchive.decode(PropertyListSerialization.data(
+            fromPropertyList: plist, format: format == "sks" ? .binary : .xml, options: 0))
+        #expect(throws: SceneArchiveError.self) { try archive.makeNode() }
+        var requests = 0
+        let scene = try #require(archive.makeNode(textureResolver: { _ in
+            requests += 1
+            return Texture(id: TextureID(rawValue: 9), textureSize: [80, 40])
+        }) as? Scene)
+        let sprites = scene.children.compactMap { $0 as? Sprite }
+        #expect(sprites.count == 2 && requests == 1)
+        #expect(sprites.allSatisfy { $0.texture == nil })
+        scene.advance(by: .milliseconds(250))
+        #expect(sprites.allSatisfy { $0.texture == nil })
+        scene.advance(by: .milliseconds(500))
+        #expect(sprites.map { $0.texture?.size } == [[40, 40], [40, 40]])
+        #expect(sprites.map(\.size) == (preserveSize ? [[12, 8], [12, 8]] : [[40, 40], [40, 40]]))
+        scene.advance(by: .milliseconds(500))
+        #expect(sprites.map { $0.texture?.size } == [[80, 40], [80, 40]])
+        #expect(sprites.map(\.size) == (preserveSize ? [[12, 8], [12, 8]] : [[80, 40], [80, 40]]))
+        #expect(sprites.allSatisfy { !$0.hasActions })
+        let cancelled = try archive.makeNode(textureResolver: { _ in
+            Texture(id: TextureID(rawValue: 10), textureSize: [80, 40])
+        })
+        cancelled.children.forEach { $0.removeAllActions() }
+        let cancelledScene = try #require(cancelled as? Scene)
+        cancelledScene.advance(by: .seconds(2))
+        #expect(cancelled.children.compactMap { $0 as? Sprite }.allSatisfy { $0.texture == nil })
+    }
+
+    @Test func rejectsMalformedTextureReplacement() throws {
+        let graph = try KeyedArchive(ArchivePropertyList.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/set-texture-actions.sks"))))
+        let id = try #require(graph.objects.firstIndex { value in
+            guard let fields = value.dictionary else { return false }
+            return (try? graph.className(fields)) == "SKAnimate"
+        })
+        let fields = try graph.dictionary(.uid(id))
+        let textures = try graph.array(fields["_textures"])
+        for changes: [String: PropertyValue] in [
+            ["_restore": .bool(true)], ["_resize": .string("yes")],
+            ["_textures": .array([])], ["_textures": .array(textures + textures)],
+            ["_duration": .number(0.000001)]
+        ] {
+            var objects = graph.objects
+            objects[id] = .dictionary(fields.merging(changes) { _, new in new })
+            let modified = try KeyedArchive(.dictionary(["$archiver": .string("NSKeyedArchiver"),
+                "$version": .number(100_000), "$top": .dictionary(["root": .uid(graph.rootID)]),
+                "$objects": .array(objects)]))
+            var decoder = ArchiveActionDecoder(graph: modified)
+            #expect(throws: SceneArchiveError.self) {
+                try decoder.actions(["_actions": .array([.uid(id)])])
+            }
+        }
+    }
+
     @Test func rejectsMalformedTextureAnimations() throws {
         let graph = try KeyedArchive(ArchivePropertyList.decode(Data(contentsOf: Fixtures.url("SceneArchives/texture-actions.sks"))))
         let id = try #require(graph.objects.firstIndex { value in
