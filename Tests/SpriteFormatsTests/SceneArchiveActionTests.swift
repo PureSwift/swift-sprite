@@ -241,6 +241,49 @@ import SpriteGraph
         return (graph, fields)
     }
 
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresColorActions(format: String) throws {
+        let archive = try SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/color-actions." + format)))
+        let scene = try #require(archive.makeNode() as? Scene)
+        let color = try #require(scene.children[0] as? Sprite)
+        let blend = try #require(scene.children[1] as? Sprite)
+        let repeated = try #require(scene.children[2] as? Sprite)
+        scene.advance(by: .seconds(1))
+        #expect(abs(color.color.red - 0.5) < 0.00001 && abs(color.color.blue - 0.5) < 0.00001)
+        #expect(color.colorBlendFactor == 0.375)
+        #expect(blend.color == .blue && abs(blend.colorBlendFactor - 0.5) < 0.00001)
+        #expect(repeated.color == .blue && repeated.hasActions)
+        scene.advance(by: .seconds(1))
+        #expect(color.color == .red && color.colorBlendFactor == 0.75)
+        #expect(blend.color == .blue && abs(blend.colorBlendFactor - 0.2) < 0.00001)
+        #expect(repeated.color == .blue && repeated.colorBlendFactor == 0)
+        #expect(scene.children.allSatisfy { !$0.hasActions })
+        let other = try archive.makeNode()
+        let independent = try #require(other.children[0] as? Sprite)
+        #expect(independent.color == .blue && independent.colorBlendFactor == 0)
+    }
+
+    @Test func rejectsMalformedColorActions() throws {
+        let valid: [String: PropertyValue] = [
+            "_duration": .number(1), "_colorMix": .number(0.5), "_isMixOnly": .bool(false),
+            "_colorBlendR": .number(1), "_colorBlendG": .number(0),
+            "_colorBlendB": .number(0), "_colorBlendA": .number(1)
+        ]
+        for change: [String: PropertyValue] in [
+            ["_colorMix": .number(-0.1)], ["_colorMix": .number(1.1)],
+            ["_colorMix": .number(.nan)], ["_colorMix": .null],
+            ["_isMixOnly": .string("yes")], ["_isMixOnly": .null],
+            ["_colorBlendR": .number(.infinity)], ["_colorBlendG": .number(-1)],
+            ["_colorBlendB": .number(2)], ["_colorBlendA": .null]
+        ] {
+            let (graph, fields) = try archive(actionFields: valid.merging(change) { _, new in new },
+                className: "SKColorize")
+            var decoder = ArchiveActionDecoder(graph: graph)
+            #expect(throws: SceneArchiveError.self) { try decoder.actions(fields) }
+        }
+    }
+
     @Test func rejectsMalformedAndUnsupportedActions() throws {
         for fields: [String: PropertyValue] in [["_duration": .number(-1)],
             ["_duration": .number(.infinity)], ["_timingMode": .number(99)],
