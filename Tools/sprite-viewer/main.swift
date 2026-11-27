@@ -349,6 +349,15 @@ struct ViewerAtlasKey: Hashable {
 }
 
 let arguments = Array(CommandLine.arguments.dropFirst())
+let frameOptions = arguments.indices.filter { arguments[$0] == "--frames" }
+var frameLimit: Int?
+if let index = frameOptions.first {
+    guard frameOptions.count == 1, arguments.indices.contains(index + 1),
+          let count = Int(arguments[index + 1]), (1...1_000_000).contains(count) else {
+        throw SceneArchiveError.invalid("--frames requires one integer between 1 and 1000000")
+    }
+    frameLimit = count
+}
 let nodeClassMappings = try customNodeClasses(arguments: arguments)
 var atlasDirectories: [String: URL] = [:]
 for index in arguments.indices where arguments[index] == "--atlas" {
@@ -467,6 +476,7 @@ if let option = CommandLine.arguments.firstIndex(of: "--tmx") {
 }
 var running = true
 var lastTicks = SDL.ticks
+var renderedFrames = 0
 
 while running {
     for event in window.pollEvents() {
@@ -475,9 +485,14 @@ while running {
         (scene as? DemoScene)?.handle(event)
     }
     let now = SDL.ticks
-    let deltaTime = Duration.nanoseconds(Int64(now - lastTicks))
+    let deltaTime = frameLimit == nil ? Duration.nanoseconds(Int64(now - lastTicks)) : .seconds(1.0 / 60)
     lastTicks = now
     try scene.present(on: backend, deltaTime: deltaTime)
     // Paused scenes skip `update`, so refresh the HUD directly.
     if scene.isPaused { scene.didFinishUpdate() }
+    renderedFrames += 1
+    if renderedFrames == frameLimit {
+        print("Rendered \(renderedFrames) frames.")
+        running = false
+    }
 }
