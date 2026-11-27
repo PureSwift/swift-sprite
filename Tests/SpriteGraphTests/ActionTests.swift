@@ -192,6 +192,35 @@ import SpriteCore
         #expect(!scene.hasActions)
     }
 
+    @Test func wildcardNamesSupportBacktrackingUnicodeAndUnnamedNodes() {
+        let cases: [(String?, String, Bool)] = [
+            (nil, "*", true), (nil, "a*", false), ("", "**", true),
+            ("enemy", "enemy*", true), ("enemy42", "en*4*", true),
+            ("ababend", "*ab*end", true), ("ababend", "*ab*finish", false),
+            ("café🐱", "caf*🐱", true), ("enemy", "friend*", false),
+            ("enemy", "*n*m*", true), ("enemy", "*n*z*", false)
+        ]
+        for (name, pattern, matches) in cases {
+            let scene = Scene(size: [100, 100])
+            let wrapper = Node(), target = Node()
+            target.name = name
+            scene.addChild(wrapper)
+            wrapper.addChild(target)
+            wrapper.run(.run(.move(by: [1, 0], duration: .zero), onChildWithName: pattern))
+            scene.advance(by: .milliseconds(1))
+            #expect(target.position.x == (matches ? 1 : 0))
+        }
+        let scene = Scene(size: [100, 100])
+        let container = Node(), target = Node()
+        container.name = "container1"
+        target.name = "enemy42"
+        scene.addChild(container)
+        container.addChild(target)
+        scene.run(.run(.move(by: [2, 0], duration: .zero), onChildWithName: "container*//enemy*"))
+        scene.advance(by: .milliseconds(1))
+        #expect(target.position.x == 2)
+    }
+
     @Test func relativeResizeComposesAndIgnoresPlainNodes() {
         let scene = Scene(size: [200, 100])
         let sprite = Sprite(color: .white, size: [20, 30])
