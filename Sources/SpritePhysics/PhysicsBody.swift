@@ -75,6 +75,13 @@ public final class PhysicsBody {
         didSet { bodyID.map { b2Body_SetType($0, bodyType) } }
     }
 
+    /// Enables Box2D bullet collision sweeps against non-bullet dynamic bodies.
+    /// Static collisions already use continuous detection. Sensors and bullet pairs
+    /// are not covered, and this does not guarantee identical SpriteKit timing.
+    public var usesContinuousCollisionDetection = false {
+        didSet { bodyID.map { b2Body_SetBullet($0, usesContinuousCollisionDetection) } }
+    }
+
     public var affectedByGravity = true {
         didSet { updateGravityScale() }
     }
@@ -344,6 +351,7 @@ public final class PhysicsBody {
         definition.angularDamping = angularDamping
         definition.gravityScale = effectiveGravityScale
         definition.motionLocks = motionLocks
+        definition.isBullet = usesContinuousCollisionDetection
         definition.userData = Unmanaged.passUnretained(self).toOpaque()
         bodyID = b2CreateBody(worldID, &definition)
         createShapes()
