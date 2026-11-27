@@ -285,3 +285,8 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: colorArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("emitter-colors." + suffix))
 }
+
+colorEmitter.particleColorBlendFactorRange = 1
+let blendArchive = try tilePlist(colorEmitter)
+try PropertyListSerialization.data(fromPropertyList: blendArchive, format: .binary, options: 0)
+    .write(to: directory.appendingPathComponent("emitter-blend.sks"))
