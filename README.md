@@ -185,13 +185,13 @@ fixtures cover binary/XML decoding and simulation without requiring SpriteKit at
 
 Archived actions support relative/absolute movement (including single-axis movement),
 Z rotation, two-axis scaling, fading, waits, hide/unhide, removal, sequences, groups,
-finite repeats, repeat-forever, and `SKAnimate` texture flipbooks. The ordered action list and keys are restored without
+finite repeats, repeat-forever, `SKAnimate` texture flipbooks, and `SKPlaySound` callbacks. The ordered action list and keys are restored without
 duplicating keyed actions. Each `makeNode()` creates independent playback state, and
 standard timing modes use the engine's easing curves.
 
 Actions start from their archived descriptions. Reversed actions, detectable partially
 executed state, retimed composites/flipbooks, single-axis/size-based scaling, color/resize
-animations, paths, sounds, callbacks, and custom classes are unsupported. Native fixtures
+animations, paths, archived executable callbacks, and custom classes are unsupported. Native fixtures
 do not encode action speed; omitted runtime state cannot be recovered. Node speed and
 pause settings still apply. This is not a snapshot/resume mechanism for running games.
 
@@ -201,6 +201,25 @@ and restoration on completion or cancellation, including keyed replacement and n
 actions. Only animations that have started and are still active restore their texture.
 Editor archives may save scenes and sprites paused; unpause the desired
 nodes explicitly to start playback.
+
+Sound actions require an explicit host playback resolver:
+
+```swift
+let root = try archive.makeNode(
+    textureResolver: { textures[$0.imageName] },
+    soundResolver: { playbackCallbacks[$0] } // [String: Action.Block]
+)
+```
+
+The resolver prepares a main-actor playback callback; it does not start audio. The
+callback receives the running node when the action begins and is called once per
+repeat. Missing callbacks throw `missingSound`. Resolution is cached by filename
+across the expanded scene. Named action libraries accept the same `soundResolver`.
+Waiting actions use their archived duration; nonwaiting actions complete immediately.
+This is action-clock timing, not an audio-device completion signal. Node/action speed
+can change that timing without changing audio playback speed. The host owns audio
+loading, output, and already-started playback; cancelling an action does not stop audio.
+Nonzero archived sound positions are currently unsupported.
 
 Standalone editor `Actions.sks` libraries can be loaded independently of a scene:
 
