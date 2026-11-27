@@ -400,7 +400,16 @@ if let option = CommandLine.arguments.firstIndex(of: "--tmx") {
         if imageURL.pathExtension.isEmpty { imageURL.appendPathExtension("png") }
         let pixels = try PixelBuffer(png: Array(Data(contentsOf: imageURL)))
         return try backend.makeTexture(pixels, filtering: reference.filtering)
-    }, fontResolver: { _ in font }, tileSetResolver: { tileSets[$0] })
+    }, fontResolver: { _ in font }, tileSetResolver: { tileSets[$0] }, referenceResolver: { name in
+        // All named resources share the root archive's directory, like a resource bundle.
+        var referenceURL = URL(fileURLWithPath: name, relativeTo: url.deletingLastPathComponent())
+        if referenceURL.pathExtension.isEmpty { referenceURL.appendPathExtension("sks") }
+        guard FileManager.default.fileExists(atPath: referenceURL.path) else { return nil }
+        let referenced = try SpriteKitSceneArchive.decode(Data(contentsOf: referenceURL),
+            customNodeClasses: nodeClassMappings)
+        for diagnostic in referenced.diagnostics { print("\(name): \(diagnostic)") }
+        return referenced
+    })
     if let archivedScene = root as? Scene {
         scene = archivedScene
     } else {
