@@ -126,6 +126,25 @@ import SpriteCore
         #expect(!caller.hasActions)
     }
 
+    @Test func parentPathsDoNotClimbAboveRoot() {
+        let scene = Scene(size: [100, 100])
+        let caller = Node(), target = Node()
+        caller.name = "caller"
+        target.name = "target"
+        scene.addChild(caller)
+        scene.addChild(target)
+        caller.run(.run(.move(by: [10, 0], duration: .zero), onChildWithName: "./../target"))
+        scene.advance(by: .milliseconds(1))
+        #expect(target.position.x == 10)
+        caller.run(.run(.move(by: [100, 0], duration: .zero), onChildWithName: "../../target"))
+        scene.advance(by: .milliseconds(1))
+        #expect(target.position.x == 10 && !caller.hasActions)
+        let detached = Node()
+        detached.run(.run(.move(by: [100, 0], duration: .zero), onChildWithName: ".."))
+        detached.evaluateActions(seconds: 1)
+        #expect(detached.position == .zero && !detached.hasActions)
+    }
+
     @Test func relativeResizeComposesAndIgnoresPlainNodes() {
         let scene = Scene(size: [200, 100])
         let sprite = Sprite(color: .white, size: [20, 30])
