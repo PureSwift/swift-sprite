@@ -72,8 +72,13 @@ extension Action {
         case let .resize(width, height):
             return interpolating(from: { ($0 as? Sprite)?.size ?? .zero }) { node, start, t in
                 guard let sprite = node as? Sprite else { return }
-                let target = Vector2(width ?? start.x, height ?? start.y)
-                sprite.size = start + (target - start) * t
+                if let width { sprite.size.x = start.x + (width - start.x) * t }
+                if let height { sprite.size.y = start.y + (height - start.y) * t }
+            }
+        case let .resizeBy(delta):
+            return incremental { node, step in
+                guard let sprite = node as? Sprite else { return }
+                sprite.size += delta * step
             }
         case let .colorize(color, blendFactor):
             return interpolating(from: { node -> (Color, Float) in
