@@ -344,3 +344,23 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: actionLibrary, format: format, options: 0)
         .write(to: directory.appendingPathComponent("action-library." + suffix))
 }
+
+let referenceTarget = SKScene(size: CGSize(width: 100, height: 100))
+let referencedSprite = SKSpriteNode(texture: tileTexture)
+referencedSprite.name = "content"
+referencedSprite.position = CGPoint(x: 5, y: 7)
+referenceTarget.addChild(referencedSprite)
+let referenceScene = SKScene(size: CGSize(width: 200, height: 100))
+for x in [20, 80] {
+    guard let reference = SKReferenceNode(fileNamed: "ReferenceTarget") else { fatalError("Missing reference node") }
+    reference.name = "instance-\(x)"
+    reference.position = CGPoint(x: x, y: 10)
+    referenceScene.addChild(reference)
+}
+for (name, root) in [("references", referenceScene), ("reference-target", referenceTarget)] {
+    let archive = try tilePlist(root)
+    for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+        try PropertyListSerialization.data(fromPropertyList: archive, format: format, options: 0)
+            .write(to: directory.appendingPathComponent(name + "." + suffix))
+    }
+}
