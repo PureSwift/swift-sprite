@@ -69,7 +69,7 @@ let package = Package(
             dependencies: ["SpriteCore", "SpritePhysics"],
             swiftSettings: swiftSettings
         ),
-        // Asset codecs: PNG, texture atlases, sprite sheets, tile maps and scene archives with physics and actions.
+        // Asset codecs: PNG, texture atlases, sprite sheets, tile maps and scene archives with physics, actions, and particle emitters.
         .target(
             name: "SpriteFormats",
             dependencies: [
