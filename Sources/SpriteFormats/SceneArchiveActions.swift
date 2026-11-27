@@ -284,6 +284,17 @@ struct ArchiveActionDecoder {
                 action = .colorize(with: try graph.color(fields, prefix: "_colorBlend"),
                     blendFactor: blend, duration: duration)
             }
+        case "SKSpeed":
+            guard try !graph.isNull(fields["_speedTarget"]) else {
+                throw SceneArchiveError.invalid("Missing speed target")
+            }
+            let target = try number("_speedTarget")
+            guard target >= 0 else { throw SceneArchiveError.invalid("Negative speed target") }
+            guard try number("_deltaSpeed") == 0 else {
+                throw SceneArchiveError.unsupported("Partially executed speed action")
+            }
+            action = try flag("_isRelative") ? .changeSpeed(by: target, duration: duration)
+                : .changeSpeed(to: target, duration: duration)
         case "SKWait": action = .wait(for: duration)
         case "SKHide", "SKRemove":
             guard seconds == 0 else { throw SceneArchiveError.unsupported("Retimed instantaneous action") }
