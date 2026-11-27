@@ -539,3 +539,20 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: sizeScaleArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("size-scale-actions." + suffix))
 }
+
+let setTextureScene = SKScene(size: CGSize(width: 100, height: 100))
+for resize in [false, true] {
+    let sprite = SKSpriteNode(color: .white, size: CGSize(width: 12, height: 8))
+    sprite.run(.sequence([
+        .wait(forDuration: 0.5),
+        .setTexture(croppedTile, resize: resize),
+        .wait(forDuration: 0.5),
+        .setTexture(tileTexture, resize: resize)
+    ]), withKey: "texture")
+    setTextureScene.addChild(sprite)
+}
+let setTextureArchive = try tilePlist(setTextureScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: setTextureArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("set-texture-actions." + suffix))
+}
