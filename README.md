@@ -165,7 +165,20 @@ physics bodies under scaled reference hierarchies remain unsupported.
 
 This is an initial archive subset tested against fixtures generated with macOS SpriteKit,
 not a guarantee of compatibility with every Xcode editor or OS archive version.
-Custom/unknown node classes, constraints, effects, lighting,
+Custom node classes require an explicit mapping when decoding, for example:
+
+```swift
+let archive = try SpriteKitSceneArchive.decode(data,
+    customNodeClasses: ["GameScene": .scene, "GameSprite": .sprite])
+```
+
+Mappings restore the selected standard node layout and report each substitution in
+`diagnostics`. They do not execute custom code or restore custom fields. The caller
+must choose the correct layout, since editor archives can omit superclass metadata.
+Built-in classes cannot be remapped. Pass mappings separately when decoding referenced
+archives in a reference resolver. Unmapped classes remain unsupported.
+
+Constraints, effects, lighting,
 attributed labels, embedded image data, and rotated/trimmed textures are unsupported.
 User data is omitted with entries in `diagnostics`.
 Circle, rectangle, convex counterclockwise polygon, and compound physics bodies are restored with
