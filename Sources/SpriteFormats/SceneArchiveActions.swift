@@ -316,11 +316,13 @@ struct ArchiveActionDecoder {
                   !childName.contains(where: { "*[]".contains($0) }) else {
                 throw SceneArchiveError.unsupported("Child action requires a literal path")
             }
-            let recursive = childName.hasPrefix("//") || childName.hasPrefix(".//")
-            let prefixLength = childName.hasPrefix(".//") ? 3 : (childName.hasPrefix("//") ? 2 : (childName.hasPrefix("/") ? 1 : 0))
-            let components = childName.dropFirst(prefixLength).split(separator: "/", omittingEmptySubsequences: false)
-            guard components.allSatisfy({ !$0.isEmpty }),
-                  !recursive || (components.first != "." && components.first != "..") else {
+            let path = childName.hasPrefix("/") ? String(childName.dropFirst()) : childName
+            let components = path.split(separator: "/", omittingEmptySubsequences: false)
+            guard components.indices.allSatisfy({ index in
+                !components[index].isEmpty || (index + 1 < components.count
+                    && !components[index + 1].isEmpty
+                    && components[index + 1] != "." && components[index + 1] != "..")
+            }) else {
                 throw SceneArchiveError.unsupported("Empty or unsupported recursive child path")
             }
             guard let child = fields["_action"] else {
