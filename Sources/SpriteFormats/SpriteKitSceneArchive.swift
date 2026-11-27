@@ -8,6 +8,7 @@ public enum SceneArchiveError: Error, Equatable, Sendable {
     case missingTexture(String)
     case missingFont(String)
     case missingTileSet(String)
+    case missingReference(String)
 }
 
 /// Reads binary or XML SpriteKit keyed archives through Foundation.
@@ -56,12 +57,17 @@ public struct SpriteKitSceneArchive: Sendable {
         var actions: [ArchiveNodeAction] = []
         var physicsBody: ArchivePhysicsBody?
         var physicsWorld: ArchivePhysicsWorld?
+        var referenceName: String?
+        var scaledHierarchy = false
     }
 
     private let rootID: Int
     private let records: [Record]
     /// Describes deliberately omitted metadata.
     public let diagnostics: [String]
+
+    /// Direct external references; nested archives may declare further names.
+    public var referenceNames: [String] { Set(records.compactMap(\.referenceName)).sorted() }
 
     public static func decode(at url: URL) async throws -> SpriteKitSceneArchive {
         try await Task.detached { try decode(Data(contentsOf: url)) }.value
@@ -81,7 +87,7 @@ public struct SpriteKitSceneArchive: Sendable {
             }
             let fields = try graph.dictionary(.uid(id))
             let className = try graph.className(fields)
-            guard ["SKScene", "SKNode", "SKSpriteNode", "SKCameraNode", "SKLabelNode", "SKEmitterNode", "SKTileMapNode"].contains(className) else {
+            guard ["SKScene", "SKNode", "SKSpriteNode", "SKCameraNode", "SKLabelNode", "SKEmitterNode", "SKTileMapNode", "SKReferenceNode"].contains(className) else {
                 throw SceneArchiveError.unsupported("Node class \(className) at object \(id)")
             }
             if className == "SKScene", id != graph.rootID {
@@ -118,6 +124,7 @@ public struct SpriteKitSceneArchive: Sendable {
             record.position = try graph.vector(fields["_position"], default: .zero)
             record.scale = try Vector2(graph.number(fields["_xScale"], default: 1), graph.number(fields["_yScale"], default: 1))
             let scaled = scaledAncestor || record.scale != .one
+            record.scaledHierarchy = scaled
             if record.physicsBody != nil, scaled {
                 throw SceneArchiveError.unsupported("Physics bodies under scaled nodes")
             }
@@ -129,6 +136,14 @@ public struct SpriteKitSceneArchive: Sendable {
             record.speed = try graph.number(fields["_speed"], default: 1)
             record.children = try graph.array(fields["_children"]).map { try graph.reference($0, field: "_children") }
             switch className {
+            case "SKReferenceNode":
+                guard try graph.isNull(fields["_referenceURL"]) else {
+                    throw SceneArchiveError.unsupported("URL-based reference node")
+                }
+                guard let name = try graph.string(fields["_referenceFileName"]), !name.isEmpty else {
+                    throw SceneArchiveError.invalid("Missing reference node filename")
+                }
+                record.referenceName = name
             case "SKScene":
                 record.size = try graph.rect(fields["Scene_bounds"], default: .zero).size
                 guard record.size.x > 0, record.size.y > 0 else { throw SceneArchiveError.invalid("Invalid scene size") }
@@ -224,9 +239,9 @@ public struct SpriteKitSceneArchive: Sendable {
     @MainActor public func makeNode(
         textureResolver: (TextureReference) throws -> Texture? = { _ in nil },
         fontResolver: (String) throws -> BitmapFont? = { _ in nil },
-        tileSetResolver: (String) throws -> SpriteKitTileSetArchive? = { _ in nil }
+        tileSetResolver: (String) throws -> SpriteKitTileSetArchive? = { _ in nil },
+        referenceResolver: (String) throws -> SpriteKitSceneArchive? = { _ in nil }
     ) throws -> Node {
-        var nodes: [Int: Node] = [:]
         var textures: [TextureReference: Texture] = [:]
         var fonts: [String: BitmapFont] = [:]
         var tileSets: [String: SpriteKitTileSetArchive] = [:]
@@ -240,93 +255,126 @@ public struct SpriteKitSceneArchive: Sendable {
             guard let texture = textures[reference] else { throw SceneArchiveError.missingTexture(reference.imageName) }
             return texture.subtexture(inUnitRect: rect)
         }
-        for record in records {
-            var texture: Texture?
-            if let reference = record.texture { texture = try resolveTexture(reference, rect: record.textureRect) }
-            let node: Node
-            switch record.className {
-            case "SKScene":
-                let scene = Scene(size: record.size)
-                scene.scaleMode = record.scaleMode
-                scene.anchorPoint = record.anchor
-                scene.backgroundColor = record.color
-                if let world = record.physicsWorld {
-                    scene.physicsWorld.gravity = world.gravity
-                    scene.physicsWorld.speed = world.speed
+        var references: [String: SpriteKitSceneArchive] = [:]
+        var activeReferences = Set<String>()
+        var remainingNodes = 100_000
+        func build(_ archive: SpriteKitSceneArchive, depth: Int, inheritedScale: Bool) throws -> Node {
+            guard depth < 32, archive.records.count <= remainingNodes else {
+                throw SceneArchiveError.invalid("Excessive reference expansion")
+            }
+            remainingNodes -= archive.records.count
+            let records = archive.records
+            let rootID = archive.rootID
+            var nodes: [Int: Node] = [:]
+            for record in records {
+                if inheritedScale, record.physicsBody != nil {
+                    throw SceneArchiveError.unsupported("Physics bodies under scaled reference nodes")
                 }
-                node = scene
-            case "SKSpriteNode":
-                let sprite = Sprite(texture: texture, color: record.color, size: record.size)
-                sprite.anchorPoint = record.anchor
-                sprite.colorBlendFactor = record.colorBlend
-                sprite.centerRect = record.centerRect
-                sprite.blendMode = record.blend
-                node = sprite
-            case "SKLabelNode":
-                if fonts[record.fontName] == nil, !record.text.isEmpty {
-                    guard let font = try fontResolver(record.fontName) else {
-                        throw SceneArchiveError.missingFont(record.fontName)
+                var texture: Texture?
+                if let reference = record.texture { texture = try resolveTexture(reference, rect: record.textureRect) }
+                let node: Node
+                switch record.className {
+                case "SKScene" where depth == 0:
+                    let scene = Scene(size: record.size)
+                    scene.scaleMode = record.scaleMode
+                    scene.anchorPoint = record.anchor
+                    scene.backgroundColor = record.color
+                    if let world = record.physicsWorld {
+                        scene.physicsWorld.gravity = world.gravity
+                        scene.physicsWorld.speed = world.speed
                     }
-                    fonts[record.fontName] = font
-                }
-                let label = Label(text: record.text, font: fonts[record.fontName], fontSize: record.fontSize)
-                label.color = record.color
-                label.blendMode = record.blend
-                label.horizontalAlignmentMode = record.horizontal
-                label.verticalAlignmentMode = record.vertical
-                label.numberOfLines = record.lineCount
-                label.preferredMaxLayoutWidth = record.layoutWidth
-                node = label
-            case "SKTileMapNode":
-                guard let map = record.tileMap else { throw SceneArchiveError.invalid("Missing tile map") }
-                let set: SpriteKitTileSetArchive
-                if let embedded = map.tileSet { set = embedded }
-                else {
-                    guard let name = map.tileSetName else { throw SceneArchiveError.invalid("Missing tile set name") }
-                    if tileSets[name] == nil {
-                        guard let resolved = try tileSetResolver(name) else { throw SceneArchiveError.missingTileSet(name) }
-                        tileSets[name] = resolved
+                    node = scene
+                case "SKSpriteNode":
+                    let sprite = Sprite(texture: texture, color: record.color, size: record.size)
+                    sprite.anchorPoint = record.anchor
+                    sprite.colorBlendFactor = record.colorBlend
+                    sprite.centerRect = record.centerRect
+                    sprite.blendMode = record.blend
+                    node = sprite
+                case "SKLabelNode":
+                    if fonts[record.fontName] == nil, !record.text.isEmpty {
+                        guard let font = try fontResolver(record.fontName) else {
+                            throw SceneArchiveError.missingFont(record.fontName)
+                        }
+                        fonts[record.fontName] = font
                     }
-                    guard let resolved = tileSets[name] else { throw SceneArchiveError.missingTileSet(name) }
-                    set = resolved
+                    let label = Label(text: record.text, font: fonts[record.fontName], fontSize: record.fontSize)
+                    label.color = record.color
+                    label.blendMode = record.blend
+                    label.horizontalAlignmentMode = record.horizontal
+                    label.verticalAlignmentMode = record.vertical
+                    label.numberOfLines = record.lineCount
+                    label.preferredMaxLayoutWidth = record.layoutWidth
+                    node = label
+                case "SKTileMapNode":
+                    guard let map = record.tileMap else { throw SceneArchiveError.invalid("Missing tile map") }
+                    let set: SpriteKitTileSetArchive
+                    if let embedded = map.tileSet { set = embedded }
+                    else {
+                        guard let name = map.tileSetName else { throw SceneArchiveError.invalid("Missing tile set name") }
+                        if tileSets[name] == nil {
+                            guard let resolved = try tileSetResolver(name) else { throw SceneArchiveError.missingTileSet(name) }
+                            tileSets[name] = resolved
+                        }
+                        guard let resolved = tileSets[name] else { throw SceneArchiveError.missingTileSet(name) }
+                        set = resolved
+                    }
+                    node = try map.makeNode(set: set) { try resolveTexture($0.reference, rect: $0.rect) }
+                case "SKEmitterNode":
+                    guard let emitter = record.emitter else { throw SceneArchiveError.invalid("Missing emitter settings") }
+                    node = emitter.makeEmitter(texture: texture)
+                case "SKCameraNode": node = Camera()
+                default: node = Node()
                 }
-                node = try map.makeNode(set: set) { try resolveTexture($0.reference, rect: $0.rect) }
-            case "SKEmitterNode":
-                guard let emitter = record.emitter else { throw SceneArchiveError.invalid("Missing emitter settings") }
-                node = emitter.makeEmitter(texture: texture)
-            case "SKCameraNode": node = Camera()
-            default: node = Node()
+                node.name = record.name
+                node.position = record.position
+                node.scale = record.scale
+                node.zRotation = record.rotation
+                node.zPosition = record.zPosition
+                node.alpha = record.alpha
+                node.isHidden = record.hidden
+                node.isPaused = record.paused
+                node.speed = record.speed
+                node.physicsBody = record.physicsBody?.makeBody()
+                for action in record.actions {
+                    let resolved = try action.action.makeAction { try resolveTexture($0.reference, rect: $0.rect) }
+                    node.run(resolved, withKey: action.key)
+                }
+                nodes[record.id] = node
             }
-            node.name = record.name
-            node.position = record.position
-            node.scale = record.scale
-            node.zRotation = record.rotation
-            node.zPosition = record.zPosition
-            node.alpha = record.alpha
-            node.isHidden = record.hidden
-            node.isPaused = record.paused
-            node.speed = record.speed
-            node.physicsBody = record.physicsBody?.makeBody()
-            for action in record.actions {
-                let resolved = try action.action.makeAction { try resolveTexture($0.reference, rect: $0.rect) }
-                node.run(resolved, withKey: action.key)
+            for record in records {
+                guard let parent = nodes[record.id] else { throw SceneArchiveError.invalid("Missing node") }
+                for child in record.children {
+                    guard let node = nodes[child] else { throw SceneArchiveError.invalid("Missing child") }
+                    parent.addChild(node)
+                }
+                if let emitter = parent as? ParticleEmitter, let target = record.target {
+                    emitter.targetNode = nodes[target]
+                }
+                if let scene = parent as? Scene, let camera = record.camera {
+                    scene.camera = nodes[camera] as? Camera
+                }
             }
-            nodes[record.id] = node
+            for record in records {
+                guard let name = record.referenceName, let parent = nodes[record.id] else { continue }
+                guard activeReferences.insert(name).inserted else {
+                    throw SceneArchiveError.invalid("Cyclic reference node: \(name)")
+                }
+                defer { activeReferences.remove(name) }
+                if references[name] == nil {
+                    guard let resolved = try referenceResolver(name) else {
+                        throw SceneArchiveError.missingReference(name)
+                    }
+                    references[name] = resolved
+                }
+                guard let resolved = references[name] else { throw SceneArchiveError.missingReference(name) }
+                let child = try build(resolved, depth: depth + 1,
+                    inheritedScale: inheritedScale || record.scaledHierarchy)
+                parent.addChild(child)
+            }
+            guard let root = nodes[rootID] else { throw SceneArchiveError.invalid("Missing root") }
+            return root
         }
-        for record in records {
-            guard let parent = nodes[record.id] else { throw SceneArchiveError.invalid("Missing node") }
-            for child in record.children {
-                guard let node = nodes[child] else { throw SceneArchiveError.invalid("Missing child") }
-                parent.addChild(node)
-            }
-            if let emitter = parent as? ParticleEmitter, let target = record.target {
-                emitter.targetNode = nodes[target]
-            }
-            if let scene = parent as? Scene, let camera = record.camera {
-                scene.camera = nodes[camera] as? Camera
-            }
-        }
-        guard let root = nodes[rootID] else { throw SceneArchiveError.invalid("Missing root") }
-        return root
+        return try build(self, depth: 0, inheritedScale: false)
     }
 }
