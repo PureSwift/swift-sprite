@@ -736,3 +736,16 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: embeddedSearchArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("embedded-search-actions." + suffix))
 }
+
+let wildcardScene = SKScene(size: CGSize(width: 100, height: 100))
+for name in ["friend", "enemy", "enemy2"] {
+    let node = SKNode()
+    node.name = name
+    wildcardScene.addChild(node)
+}
+wildcardScene.run(.run(.moveBy(x: 10, y: 0, duration: 1), onChildWithName: "enemy*"))
+let wildcardArchive = try tilePlist(wildcardScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: wildcardArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("wildcard-actions." + suffix))
+}
