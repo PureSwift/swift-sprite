@@ -280,12 +280,22 @@ public extension Action {
         return Action(.wait, seconds: duration.seconds + jitter)
     }
 
-    /// Starts an independent action on the first direct child with this exact name.
-    /// The child is looked up at playback time. A missing child is a no-op.
+    /// Starts an independent action on the first match for a relative child path.
+    /// Each slash-separated component is an exact name; search expressions are unsupported.
+    /// Lookup happens at playback time. A missing child is a no-op.
     /// This action completes immediately without waiting for the child's action.
     static func run(_ action: Action, onChildWithName name: String) -> Action {
-        .run { node in
-            node.children.first { $0.name == name }?.run(action)
+        let components = name.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        return .run { node in
+            guard components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else { return }
+            var candidates = [node]
+            for component in components {
+                candidates = candidates.flatMap { parent in
+                    parent.children.filter { $0.name == component }
+                }
+                if candidates.isEmpty { return }
+            }
+            candidates.first?.run(action)
         }
     }
 
