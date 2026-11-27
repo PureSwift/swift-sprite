@@ -20,6 +20,7 @@ struct ParticleBuffer {
     var scaleSpeed: [Float] = []
     var alpha: [Float] = []
     var alphaSpeed: [Float] = []
+    var colorBlendFactor: [Float] = []
 
     var count: Int {
         position.count
@@ -36,6 +37,7 @@ struct ParticleBuffer {
         scaleSpeed.reserveCapacity(capacity)
         alpha.reserveCapacity(capacity)
         alphaSpeed.reserveCapacity(capacity)
+        colorBlendFactor.reserveCapacity(capacity)
     }
 
     mutating func append(
@@ -48,7 +50,8 @@ struct ParticleBuffer {
         scale: Float,
         scaleSpeed: Float,
         alpha: Float,
-        alphaSpeed: Float
+        alphaSpeed: Float,
+        colorBlendFactor: Float
     ) {
         self.position.append(position)
         self.velocity.append(velocity)
@@ -60,6 +63,7 @@ struct ParticleBuffer {
         self.scaleSpeed.append(scaleSpeed)
         self.alpha.append(alpha)
         self.alphaSpeed.append(alphaSpeed)
+        self.colorBlendFactor.append(colorBlendFactor)
     }
 
     /// Removes a particle by moving the last particle into its slot.
@@ -74,6 +78,7 @@ struct ParticleBuffer {
         scaleSpeed.swapAt(index, scaleSpeed.count - 1); scaleSpeed.removeLast()
         alpha.swapAt(index, alpha.count - 1); alpha.removeLast()
         alphaSpeed.swapAt(index, alphaSpeed.count - 1); alphaSpeed.removeLast()
+        colorBlendFactor.swapAt(index, colorBlendFactor.count - 1); colorBlendFactor.removeLast()
     }
 
     mutating func removeAll() {
