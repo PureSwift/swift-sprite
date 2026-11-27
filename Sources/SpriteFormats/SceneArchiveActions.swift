@@ -43,14 +43,17 @@ public struct SpriteKitActionArchive: Sendable {
         try await Task.detached { try decode(Data(contentsOf: url)) }.value
     }
 
-    /// Materializes an action with backend-owned textures; returns nil for an unknown name.
+    /// Materializes an action with backend-owned textures and host sound callbacks.
+    /// Returns nil for an unknown name. Sound callbacks run at playback time, not resolution.
     /// Resolution is cached within this call. Playback state is created when a node runs it.
     @MainActor public func makeAction(named name: String,
-        textureResolver: (SpriteKitSceneArchive.TextureReference) throws -> Texture? = { _ in nil }
+        textureResolver: (SpriteKitSceneArchive.TextureReference) throws -> Texture? = { _ in nil },
+        soundResolver: (String) throws -> Action.Block? = { _ in nil }
     ) throws -> Action? {
         guard let action = actions[name] else { return nil }
         var textures: [SpriteKitSceneArchive.TextureReference: Texture] = [:]
-        return try action.makeAction { frame in
+        var sounds: [String: Action.Block] = [:]
+        return try action.makeAction(texture: { frame in
             if textures[frame.reference] == nil {
                 guard let texture = try textureResolver(frame.reference) else {
                     throw SceneArchiveError.missingTexture(frame.reference.imageName)
@@ -61,7 +64,12 @@ public struct SpriteKitActionArchive: Sendable {
                 throw SceneArchiveError.missingTexture(frame.reference.imageName)
             }
             return texture.subtexture(inUnitRect: frame.rect)
-        }
+        }, sound: { name in
+            if let playback = sounds[name] { return playback }
+            guard let playback = try soundResolver(name) else { throw SceneArchiveError.missingSound(name) }
+            sounds[name] = playback
+            return playback
+        })
     }
 }
 
@@ -74,22 +82,26 @@ struct ArchiveNodeAction: Sendable {
 indirect enum ArchiveAction: Sendable {
     case ready(Action)
     case animation([ArchiveTexture], Duration, resize: Bool, restore: Bool)
+    case sound(String, Duration)
     case sequence([ArchiveAction])
     case group([ArchiveAction])
     case repeated(ArchiveAction, count: Int?)
     case timed(ArchiveAction, Action.TimingMode)
 
-    @MainActor func makeAction(texture: (ArchiveTexture) throws -> Texture) throws -> Action {
+    @MainActor func makeAction(texture: (ArchiveTexture) throws -> Texture,
+        sound: (String) throws -> Action.Block) throws -> Action {
         switch self {
         case let .ready(action): return action
+        case let .sound(name, duration):
+            return .sequence([.run(try sound(name)), .wait(for: duration)])
         case let .animation(frames, time, resize, restore):
             return .animate(with: try frames.map(texture), timePerFrame: time, resize: resize, restore: restore)
-        case let .sequence(children): return .sequence(try children.map { try $0.makeAction(texture: texture) })
-        case let .group(children): return .group(try children.map { try $0.makeAction(texture: texture) })
+        case let .sequence(children): return .sequence(try children.map { try $0.makeAction(texture: texture, sound: sound) })
+        case let .group(children): return .group(try children.map { try $0.makeAction(texture: texture, sound: sound) })
         case let .repeated(child, count):
-            let action = try child.makeAction(texture: texture)
+            let action = try child.makeAction(texture: texture, sound: sound)
             return count.map { .repeat(action, count: $0) } ?? .repeatForever(action)
-        case let .timed(child, mode): return try child.makeAction(texture: texture).timingMode(mode)
+        case let .timed(child, mode): return try child.makeAction(texture: texture, sound: sound).timingMode(mode)
         }
     }
 
@@ -97,6 +109,7 @@ indirect enum ArchiveAction: Sendable {
     var timingAction: Action {
         switch self {
         case let .ready(action): return action
+        case let .sound(_, duration): return .wait(for: duration)
         case let .animation(frames, time, _, _): return .wait(for: time * frames.count)
         case let .sequence(children): return .sequence(children.map(\.timingAction))
         case let .group(children): return .group(children.map(\.timingAction))
@@ -213,6 +226,17 @@ struct ArchiveActionDecoder {
         case "SKHide", "SKRemove":
             guard seconds == 0 else { throw SceneArchiveError.unsupported("Retimed instantaneous action") }
             action = name == "SKRemove" ? .removeFromParent() : (try flag("_hiddenValue") ? .hide : .unhide)
+        case "SKPlaySound":
+            guard let filename = try graph.string(fields["_fileName"]), !filename.isEmpty else {
+                throw SceneArchiveError.invalid("Missing sound filename")
+            }
+            guard try graph.vector(fields["_position"], default: .zero) == .zero else {
+                throw SceneArchiveError.unsupported("Positioned sound action")
+            }
+            let waits = try flag("_wait")
+            guard waits || seconds == 0 else { throw SceneArchiveError.unsupported("Retimed nonwaiting sound action") }
+            deferred = .sound(filename, waits ? duration : .zero)
+            action = .wait(for: waits ? duration : .zero)
         case "SKAnimate":
             let values = try graph.array(fields["_textures"])
             guard !values.isEmpty, values.count <= 4096, values.count <= budget else {
