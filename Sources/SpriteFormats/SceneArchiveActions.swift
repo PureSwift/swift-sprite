@@ -43,14 +43,17 @@ public struct SpriteKitActionArchive: Sendable {
         try await Task.detached { try decode(Data(contentsOf: url)) }.value
     }
 
-    /// Materializes an action with backend-owned textures; returns nil for an unknown name.
+    /// Materializes an action with backend-owned textures and host sound callbacks.
+    /// Returns nil for an unknown name. Sound callbacks run at playback time, not resolution.
     /// Resolution is cached within this call. Playback state is created when a node runs it.
     @MainActor public func makeAction(named name: String,
-        textureResolver: (SpriteKitSceneArchive.TextureReference) throws -> Texture? = { _ in nil }
+        textureResolver: (SpriteKitSceneArchive.TextureReference) throws -> Texture? = { _ in nil },
+        soundResolver: (String) throws -> Action.Block? = { _ in nil }
     ) throws -> Action? {
         guard let action = actions[name] else { return nil }
         var textures: [SpriteKitSceneArchive.TextureReference: Texture] = [:]
-        return try action.makeAction { frame in
+        var sounds: [String: Action.Block] = [:]
+        return try action.makeAction(texture: { frame in
             if textures[frame.reference] == nil {
                 guard let texture = try textureResolver(frame.reference) else {
                     throw SceneArchiveError.missingTexture(frame.reference.imageName)
@@ -61,7 +64,12 @@ public struct SpriteKitActionArchive: Sendable {
                 throw SceneArchiveError.missingTexture(frame.reference.imageName)
             }
             return texture.subtexture(inUnitRect: frame.rect)
-        }
+        }, sound: { name in
+            if let playback = sounds[name] { return playback }
+            guard let playback = try soundResolver(name) else { throw SceneArchiveError.missingSound(name) }
+            sounds[name] = playback
+            return playback
+        })
     }
 }
 
@@ -74,22 +82,28 @@ struct ArchiveNodeAction: Sendable {
 indirect enum ArchiveAction: Sendable {
     case ready(Action)
     case animation([ArchiveTexture], Duration, resize: Bool, restore: Bool)
+    case setTexture(ArchiveTexture, resize: Bool)
+    case sound(String, Duration)
     case sequence([ArchiveAction])
     case group([ArchiveAction])
     case repeated(ArchiveAction, count: Int?)
     case timed(ArchiveAction, Action.TimingMode)
 
-    @MainActor func makeAction(texture: (ArchiveTexture) throws -> Texture) throws -> Action {
+    @MainActor func makeAction(texture: (ArchiveTexture) throws -> Texture,
+        sound: (String) throws -> Action.Block) throws -> Action {
         switch self {
         case let .ready(action): return action
+        case let .sound(name, duration):
+            return .sequence([.run(try sound(name)), .wait(for: duration)])
+        case let .setTexture(frame, resize): return .setTexture(try texture(frame), resize: resize)
         case let .animation(frames, time, resize, restore):
             return .animate(with: try frames.map(texture), timePerFrame: time, resize: resize, restore: restore)
-        case let .sequence(children): return .sequence(try children.map { try $0.makeAction(texture: texture) })
-        case let .group(children): return .group(try children.map { try $0.makeAction(texture: texture) })
+        case let .sequence(children): return .sequence(try children.map { try $0.makeAction(texture: texture, sound: sound) })
+        case let .group(children): return .group(try children.map { try $0.makeAction(texture: texture, sound: sound) })
         case let .repeated(child, count):
-            let action = try child.makeAction(texture: texture)
+            let action = try child.makeAction(texture: texture, sound: sound)
             return count.map { .repeat(action, count: $0) } ?? .repeatForever(action)
-        case let .timed(child, mode): return try child.makeAction(texture: texture).timingMode(mode)
+        case let .timed(child, mode): return try child.makeAction(texture: texture, sound: sound).timingMode(mode)
         }
     }
 
@@ -97,6 +111,8 @@ indirect enum ArchiveAction: Sendable {
     var timingAction: Action {
         switch self {
         case let .ready(action): return action
+        case let .sound(_, duration): return .wait(for: duration)
+        case .setTexture: return .wait(for: .zero)
         case let .animation(frames, time, _, _): return .wait(for: time * frames.count)
         case let .sequence(children): return .sequence(children.map(\.timingAction))
         case let .group(children): return .group(children.map(\.timingAction))
@@ -164,8 +180,14 @@ struct ArchiveActionDecoder {
         for key in ["_lastRatio", "_timesRepeated", "_mycaction->_animIndex"] {
             guard try number(key) == 0 else { throw SceneArchiveError.unsupported("Partially executed action") }
         }
-        guard try !flag("_isReversed"), try !flag("_hasFired"), try !flag("_finished") else {
-            throw SceneArchiveError.unsupported("Reversed or already fired action")
+        guard try !flag("_hasFired"), try !flag("_finished") else {
+            throw SceneArchiveError.unsupported("Already fired action")
+        }
+        if try flag("_isReversed") {
+            // Native archives store reversed deltas or reciprocal scale factors in the target fields.
+            guard ["SKMove", "SKRotate", "SKResize", "SKScale"].contains(name), try flag("_isRelative") else {
+                throw SceneArchiveError.unsupported("Reversed action")
+            }
         }
         let seconds = try number("_duration")
         guard seconds >= 0, seconds <= 31_536_000 else { throw SceneArchiveError.invalid("Invalid action duration") }
@@ -201,18 +223,102 @@ struct ArchiveActionDecoder {
             action = try flag("_isRelative") ? .rotate(by: angle, duration: duration)
                 : .rotate(to: angle, duration: duration, shortestUnitArc: flag("_isUnitArc"))
         case "SKScale":
-            guard try flag("_useX"), try flag("_useY"), try !flag("_isTargetSizeBased") else {
-                throw SceneArchiveError.unsupported("Single-axis or size-based scale action")
+            guard try number("_deltaScaleX") == 0, try number("_deltaScaleY") == 0 else {
+                throw SceneArchiveError.unsupported("Partially executed scale action")
             }
+            let useX = try flag("_useX"), useY = try flag("_useY")
+            guard useX || useY else { throw SceneArchiveError.invalid("Scale action without axes") }
             let target = try Vector2(number("_scaleTargetX"), number("_scaleTargetY"))
-            action = try flag("_isRelative") ? .scale(by: target, duration: duration) : .scale(to: target, duration: duration)
+            if try flag("_isTargetSizeBased") {
+                guard useX && useY, try !flag("_isRelative") else {
+                    throw SceneArchiveError.unsupported("Relative or single-axis size-based scale action")
+                }
+                guard try !graph.isNull(fields["_targetSize"]) else {
+                    throw SceneArchiveError.invalid("Missing scale target size")
+                }
+                let size = try graph.vector(fields["_targetSize"], default: .zero)
+                guard size.x.isFinite && size.y.isFinite else {
+                    throw SceneArchiveError.invalid("Invalid scale target size")
+                }
+                action = .scale(toSize: size, duration: duration)
+            } else if try flag("_isRelative") {
+                guard useX && useY else {
+                    throw SceneArchiveError.unsupported("Single-axis relative scale action")
+                }
+                action = .scale(by: target, duration: duration)
+            } else if useX && useY {
+                action = .scale(to: target, duration: duration)
+            } else {
+                action = useX ? .scaleTo(x: target.x, duration: duration) : .scaleTo(y: target.y, duration: duration)
+            }
         case "SKFade":
             let alpha = try number("_alphaTarget")
             action = try flag("_isRelative") ? .fadeAlpha(by: alpha, duration: duration) : .fadeAlpha(to: alpha, duration: duration)
+        case "SKResize":
+            let useWidth = try flag("_useW"), useHeight = try flag("_useH")
+            guard useWidth || useHeight else {
+                throw SceneArchiveError.invalid("Resize action without dimensions")
+            }
+            guard try number("_sizeResidual.width") == 0, try number("_sizeResidual.height") == 0 else {
+                throw SceneArchiveError.unsupported("Partially executed resize action")
+            }
+            for key in [useWidth ? "_sizeTarget.width" : nil, useHeight ? "_sizeTarget.height" : nil].compactMap({ $0 }) {
+                guard try !graph.isNull(fields[key]) else {
+                    throw SceneArchiveError.invalid("Missing resize target")
+                }
+            }
+            let width = try number("_sizeTarget.width"), height = try number("_sizeTarget.height")
+            if try flag("_isRelative") {
+                action = .resize(by: [useWidth ? width : 0, useHeight ? height : 0], duration: duration)
+            } else if useWidth && useHeight {
+                action = .resize(to: [width, height], duration: duration)
+            } else {
+                action = useWidth ? .resizeTo(width: width, duration: duration)
+                    : .resizeTo(height: height, duration: duration)
+            }
+        case "SKColorize":
+            guard try !graph.isNull(fields["_colorMix"]), try !graph.isNull(fields["_isMixOnly"]) else {
+                throw SceneArchiveError.invalid("Missing color action settings")
+            }
+            let blend = try number("_colorMix")
+            guard (0...1).contains(blend) else { throw SceneArchiveError.invalid("Invalid color blend factor") }
+            if try flag("_isMixOnly") {
+                action = .colorize(withBlendFactor: blend, duration: duration)
+            } else {
+                for key in ["_colorBlendR", "_colorBlendG", "_colorBlendB", "_colorBlendA"] {
+                    guard try !graph.isNull(fields[key]), try (0...1).contains(number(key)) else {
+                        throw SceneArchiveError.invalid("Invalid action color component")
+                    }
+                }
+                action = .colorize(with: try graph.color(fields, prefix: "_colorBlend"),
+                    blendFactor: blend, duration: duration)
+            }
+        case "SKSpeed":
+            guard try !graph.isNull(fields["_speedTarget"]) else {
+                throw SceneArchiveError.invalid("Missing speed target")
+            }
+            let target = try number("_speedTarget")
+            guard target >= 0 else { throw SceneArchiveError.invalid("Negative speed target") }
+            guard try number("_deltaSpeed") == 0 else {
+                throw SceneArchiveError.unsupported("Partially executed speed action")
+            }
+            action = try flag("_isRelative") ? .changeSpeed(by: target, duration: duration)
+                : .changeSpeed(to: target, duration: duration)
         case "SKWait": action = .wait(for: duration)
         case "SKHide", "SKRemove":
             guard seconds == 0 else { throw SceneArchiveError.unsupported("Retimed instantaneous action") }
             action = name == "SKRemove" ? .removeFromParent() : (try flag("_hiddenValue") ? .hide : .unhide)
+        case "SKPlaySound":
+            guard let filename = try graph.string(fields["_fileName"]), !filename.isEmpty else {
+                throw SceneArchiveError.invalid("Missing sound filename")
+            }
+            guard try graph.vector(fields["_position"], default: .zero) == .zero else {
+                throw SceneArchiveError.unsupported("Positioned sound action")
+            }
+            let waits = try flag("_wait")
+            guard waits || seconds == 0 else { throw SceneArchiveError.unsupported("Retimed nonwaiting sound action") }
+            deferred = .sound(filename, waits ? duration : .zero)
+            action = .wait(for: waits ? duration : .zero)
         case "SKAnimate":
             let values = try graph.array(fields["_textures"])
             guard !values.isEmpty, values.count <= 4096, values.count <= budget else {
@@ -220,13 +326,24 @@ struct ArchiveActionDecoder {
             }
             budget -= values.count
             guard case let .number(time) = try graph.resolve(fields["_timePerFrame"]),
-                  time.isFinite, time >= 1e-9, time <= 31_536_000,
+                  time.isFinite, time >= 0, time <= 31_536_000,
                   abs(time * Double(values.count) - Double(seconds)) < max(0.00001, Double(seconds) * 0.00001) else {
                 throw SceneArchiveError.unsupported("Invalid or retimed texture animation")
             }
             let frames = try values.map { try ArchiveTexture($0, graph: graph) }
-            let animation = ArchiveAction.animation(frames, .seconds(time),
-                resize: try flag("_resize"), restore: try flag("_restore"))
+            let animation: ArchiveAction
+            if time == 0 {
+                guard seconds == 0, frames.count == 1, try !flag("_restore") else {
+                    throw SceneArchiveError.unsupported("Invalid instantaneous texture action")
+                }
+                animation = .setTexture(frames[0], resize: try flag("_resize"))
+            } else {
+                guard time >= 1e-9 else {
+                    throw SceneArchiveError.unsupported("Invalid texture frame duration")
+                }
+                animation = .animation(frames, .seconds(time),
+                    resize: try flag("_resize"), restore: try flag("_restore"))
+            }
             deferred = animation
             action = animation.timingAction
         case "SKSequence", "SKGroup":

@@ -165,10 +165,23 @@ physics bodies under scaled reference hierarchies remain unsupported.
 
 This is an initial archive subset tested against fixtures generated with macOS SpriteKit,
 not a guarantee of compatibility with every Xcode editor or OS archive version.
-Custom/unknown node classes, constraints, effects, lighting,
+Custom node classes require an explicit mapping when decoding, for example:
+
+```swift
+let archive = try SpriteKitSceneArchive.decode(data,
+    customNodeClasses: ["GameScene": .scene, "GameSprite": .sprite])
+```
+
+Mappings restore the selected standard node layout and report each substitution in
+`diagnostics`. They do not execute custom code or restore custom fields. The caller
+must choose the correct layout, since editor archives can omit superclass metadata.
+Built-in classes cannot be remapped. Pass mappings separately when decoding referenced
+archives in a reference resolver. Unmapped classes remain unsupported.
+
+Constraints, effects, lighting,
 attributed labels, embedded image data, and rotated/trimmed textures are unsupported.
 User data is omitted with entries in `diagnostics`.
-Circle, rectangle, and convex counterclockwise polygon physics bodies are restored with
+Circle, rectangle, convex counterclockwise polygon, and compound physics bodies are restored with
 local centers, mass, friction, restitution, damping, velocity, dynamic/gravity/rotation
 flags, and all 32 bits of collision/contact masks. Scene gravity and simulation speed
 are imported. SpriteKit density is converted from kilograms per square meter to the
@@ -177,30 +190,80 @@ converted to points per second squared using the same scale. Linear velocity rem
 in points per second. Imported scenes use the existing Box2D solver and fixed timestep;
 this does not promise identical SpriteKit simulation results.
 
-Edges, compound/texture-derived bodies, curved or nonconvex paths, joints, pinned bodies,
-precise collision detection, charged bodies, and physics bodies under scaled nodes are
+Compound bodies support archived circles and convex polygon components, including their
+local offsets; polygon components are converted from meters to points. Loading is limited
+to 256 components and 4,096 polygon vertices per compound body.
+
+Edge segments, chains, and loops load as static, two-sided collision boundaries, even
+when the archive's dynamic flag is set. Edge paths support up to 1,025 straight-line
+points and may be concave; zero-length segments are rejected. Loops connect the final
+point to the first, while chains preserve their archived endpoints.
+
+The archived precise-collision flag maps to `PhysicsBody.usesContinuousCollisionDetection`.
+This enables Box2D bullet sweeps against non-bullet dynamic bodies and can be changed
+while a body is in a world. Static collisions already use continuous detection; sensors
+and bullet-to-bullet pairs are excluded. This reduces tunneling without guaranteeing
+SpriteKit's collision timing or preventing every missed collision.
+
+Pinned bodies restore `PhysicsBody.isPinned`, which holds the node origin at a pivot
+while allowing rotation, including shapes with offset centers of mass. Moving the node
+or explicitly transforming its parent moves the pivot. Unpinning releases it, and
+removing the body cleans up its internal anchor. Pinning does not physically couple
+the body to a dynamic parent; use an explicit `PinJoint` for that behavior.
+
+Unsupported texture-derived geometry, curved paths, nonconvex volume polygons, archived joints,
+charged bodies, and physics bodies under scaled nodes are
 currently rejected. Field masks and internal collision skin radii are not imported;
 field nodes are unsupported and the engine uses its own collision geometry. Physics
 fixtures cover binary/XML decoding and simulation without requiring SpriteKit at test time.
 
 Archived actions support relative/absolute movement (including single-axis movement),
-Z rotation, two-axis scaling, fading, waits, hide/unhide, removal, sequences, groups,
-finite repeats, repeat-forever, and `SKAnimate` texture flipbooks. The ordered action list and keys are restored without
+color-and-blend or blend-only colorization,
+Z rotation, two-axis scaling, single-axis absolute scaling, scaling sprites to a display size, absolute/relative sprite resizing (including independent width/height targets), fading, node-speed changes, waits, hide/unhide, removal, sequences, groups,
+finite repeats, repeat-forever, `SKAnimate` texture flipbooks and instantaneous texture replacement, and `SKPlaySound` callbacks. The ordered action list and keys are restored without
 duplicating keyed actions. Each `makeNode()` creates independent playback state, and
-standard timing modes use the engine's easing curves.
+standard timing modes use the engine's easing curves. Size-based scaling resolves the
+sprite's base size when playback starts; zero-sized dimensions retain their scale,
+and nonsprite nodes are unaffected.
 
-Actions start from their archived descriptions. Reversed actions, detectable partially
-executed state, retimed composites/flipbooks, single-axis/size-based scaling, color/resize
-animations, paths, sounds, callbacks, and custom classes are unsupported. Native fixtures
-do not encode action speed; omitted runtime state cannot be recovered. Node speed and
-pause settings still apply. This is not a snapshot/resume mechanism for running games.
+Actions start from their archived descriptions. Reversed relative movement, Z rotation,
+resizing, and two-axis scaling use the reversed deltas or reciprocal factors stored
+by SpriteKit. Reversed sequences and groups retain their archived child order. Other reversed actions, detectable partially
+executed state, retimed composites/flipbooks, single-axis relative scaling,
+paths, archived executable callbacks, and custom classes are unsupported. Native fixtures
+do not encode node or action speed; omitted runtime state cannot be recovered. Node speed and
+pause settings still apply. Speed actions animate an absolute speed or multiply the
+starting speed; they advance using the node's current inherited speed each frame.
+Speed changes affect subsequent frame time steps, and reaching zero stops timed actions. This is not a snapshot/resume mechanism for running games.
 
 Texture flipbooks resolve every frame through the scene texture resolver and shared
 cache, including atlas subrects. They support uniform frame timing, optional resizing,
 and restoration on completion or cancellation, including keyed replacement and nested
 actions. Only animations that have started and are still active restore their texture.
+Instantaneous texture replacements honor the archived resize flag. The fixture SDK
+archives `setTexture` with resizing enabled even when requested otherwise; the
+original caller intention cannot be recovered from those archives.
 Editor archives may save scenes and sprites paused; unpause the desired
 nodes explicitly to start playback.
+
+Sound actions require an explicit host playback resolver:
+
+```swift
+let root = try archive.makeNode(
+    textureResolver: { textures[$0.imageName] },
+    soundResolver: { playbackCallbacks[$0] } // [String: Action.Block]
+)
+```
+
+The resolver prepares a main-actor playback callback; it does not start audio. The
+callback receives the running node when the action begins and is called once per
+repeat. Missing callbacks throw `missingSound`. Resolution is cached by filename
+across the expanded scene. Named action libraries accept the same `soundResolver`.
+Waiting actions use their archived duration; nonwaiting actions complete immediately.
+This is action-clock timing, not an audio-device completion signal. Node/action speed
+can change that timing without changing audio playback speed. The host owns audio
+loading, output, and already-started playback; cancelling an action does not stop audio.
+Nonzero archived sound positions are currently unsupported.
 
 Standalone editor `Actions.sks` libraries can be loaded independently of a scene:
 
@@ -278,8 +341,60 @@ swift run sprite-viewer --sks Tests/SpriteFormatsTests/Fixtures/SceneArchives/sc
 ```
 
 The viewer loads loose PNGs relative to the archive and substitutes its built-in bitmap font.
+For named atlas textures, supply source or compiled atlas directories explicitly:
+
+```sh
+swift run sprite-viewer --sks scene.sks --atlas Characters.atlas --atlas Backgrounds.atlasc
+```
+
+Each atlas is registered under its folder name without the extension. Duplicate names
+are rejected. Uploads are cached per atlas and filtering mode and shared with referenced
+scenes. Compiled atlas rotation and trim padding are restored by the atlas decoder;
+unsupported rotation or trimming encoded directly on an archived texture still fails.
+Missing atlases and texture entries produce explicit errors.
+For custom classes, repeat `--class CustomName=SKNodeClass` as needed:
+
+```sh
+swift run sprite-viewer --sks Tests/SpriteFormatsTests/Fixtures/SceneArchives/custom-classes.sks --class FixtureGameScene=SKScene --class FixtureGameSprite=SKSpriteNode
+```
+
+Supported targets are `SKScene`, `SKNode`, `SKSpriteNode`, `SKCameraNode`,
+`SKLabelNode`, `SKEmitterNode`, `SKTileMapNode`, and `SKReferenceNode`.
+Mappings require `--sks`; duplicate names, built-in name overrides, and unknown targets
+are rejected before opening a window. The viewer prints substitution diagnostics;
+custom gameplay behavior is not restored.
+
+The viewer resolves named reference scenes from the root archive's directory, appending
+`.sks` when the name has no extension. Nested reference names and loose textures use that
+same directory as their resource root, rather than the referenced file's directory.
+Custom-class mappings also apply to referenced archives, whose diagnostics include the
+reference name. Missing references, cycles, and excessive expansion fail explicitly.
 The fixture generator is `Tests/SpriteFormatsTests/Fixtures/make_scene_fixtures.swift`
 (macOS only); tests consume the checked-in archives and require no SpriteKit runtime.
+
+### Viewer smoke checks
+
+Pass `--frames N` to render a bounded number of frames and exit. This mode advances
+simulation by a fixed 1/60 second per frame; normal interactive playback uses elapsed
+time. A completed run prints `Rendered N frames.`.
+
+After building the viewer, run:
+
+```sh
+python3 Scripts/smoke-viewer.py "$(swift build --show-bin-path)/sprite-viewer"
+```
+
+The viewer does not yet provide audio playback. Use `--mute` with `--sks` to preview
+scenes containing sound actions, including referenced scenes. It reports each muted
+sound once and preserves archived action waits without loading audio files. Without
+`--mute`, sound actions still fail with a missing-sound error.
+
+The script uses SDL's dummy video driver and software renderer, requires clean exits
+and completed frames for successful loads, and treats timeouts as failures. Its 31
+checks cover custom classes, references, muted sound actions, source/compiled atlases, physics fixtures,
+and invalid options or resources. Temporary derived archives stay outside the repository.
+The `Viewer smoke tests` workflow builds the viewer, runs the full Swift test suite,
+and runs these checks on pushes and pull requests.
 
 ### Tutorial compatibility assets
 

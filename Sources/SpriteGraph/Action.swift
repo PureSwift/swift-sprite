@@ -50,9 +50,12 @@ public struct Action: Sendable {
         case rotateTo(Float, shortestUnitArc: Bool)
         case scale(by: Vector2)
         case scaleTo(x: Float?, y: Float?)
+        case scaleToSize(Vector2)
         case fade(by: Float)
         case fadeTo(Float)
+        case changeSpeed(Float, relative: Bool)
         case resize(width: Float?, height: Float?)
+        case resizeBy(Vector2)
         case colorize(Color?, blendFactor: Float)
         case animate([Texture], resize: Bool, restore: Bool)
         case setTexture(Texture, resize: Bool)
@@ -159,6 +162,16 @@ public extension Action {
     static func scale(to value: Vector2, duration: Duration) -> Action {
         Action(.scaleTo(x: value.x, y: value.y), duration: duration)
     }
+
+    /// Animates only the horizontal scale, leaving vertical scale untouched.
+    static func scaleTo(x: Float, duration: Duration) -> Action {
+        Action(.scaleTo(x: x, y: nil), duration: duration)
+    }
+
+    /// Animates only the vertical scale, leaving horizontal scale untouched.
+    static func scaleTo(y: Float, duration: Duration) -> Action {
+        Action(.scaleTo(x: nil, y: y), duration: duration)
+    }
 }
 
 // MARK: - Appearance
@@ -187,6 +200,28 @@ public extension Action {
 
     static var unhide: Action {
         Action(.hide(false), seconds: 0)
+    }
+
+    /// Animates a sprite's scale to achieve a display size, using its base size
+    /// when playback starts. Zero-sized dimensions retain their scale.
+    /// Has no effect on other node types.
+    static func scale(toSize size: Vector2, duration: Duration) -> Action {
+        Action(.scaleToSize(size), duration: duration)
+    }
+
+    /// Changes a sprite's size by an additive amount.
+    static func resize(by delta: Vector2, duration: Duration) -> Action {
+        Action(.resizeBy(delta), duration: duration)
+    }
+
+    /// Animates only a sprite's width.
+    static func resizeTo(width: Float, duration: Duration) -> Action {
+        Action(.resize(width: width, height: nil), duration: duration)
+    }
+
+    /// Animates only a sprite's height.
+    static func resizeTo(height: Float, duration: Duration) -> Action {
+        Action(.resize(width: nil, height: height), duration: duration)
     }
 
     /// Animates a ``Sprite``'s size.
@@ -223,6 +258,17 @@ public extension Action {
 // MARK: - Control
 
 public extension Action {
+
+    /// Animates the node's playback speed to a nonnegative target.
+    /// The node's current speed also controls this action's progress.
+    static func changeSpeed(to value: Float, duration: Duration) -> Action {
+        Action(.changeSpeed(max(value, 0), relative: false), duration: duration)
+    }
+
+    /// Multiplies the node's speed at playback start by a nonnegative factor.
+    static func changeSpeed(by factor: Float, duration: Duration) -> Action {
+        Action(.changeSpeed(max(factor, 0), relative: true), duration: duration)
+    }
 
     static func wait(for duration: Duration) -> Action {
         Action(.wait, duration: duration)

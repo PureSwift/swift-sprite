@@ -319,6 +319,76 @@ final class DemoScene: Scene {
     }
 }
 
+/// Explicitly selects standard archive layouts for custom node names.
+func customNodeClasses(arguments: [String]) throws -> [String: SpriteKitSceneArchive.NodeClass] {
+    var mappings: [String: SpriteKitSceneArchive.NodeClass] = [:]
+    for index in arguments.indices where arguments[index] == "--class" {
+        guard arguments.contains("--sks"), !arguments.contains("--tmx"),
+              arguments.indices.contains(index + 1) else {
+            throw SceneArchiveError.invalid("--class requires --sks and a CustomName=SKNodeClass value")
+        }
+        let parts = arguments[index + 1].split(separator: "=", omittingEmptySubsequences: false)
+        guard parts.count == 2, !parts[0].isEmpty,
+              SpriteKitSceneArchive.NodeClass(rawValue: String(parts[0])) == nil,
+              let nodeClass = SpriteKitSceneArchive.NodeClass(rawValue: String(parts[1])) else {
+            let choices = SpriteKitSceneArchive.NodeClass.allCases.map(\.rawValue).joined(separator: ", ")
+            throw SceneArchiveError.invalid("Invalid --class mapping; use CustomName=Class with one of: " + choices)
+        }
+        let name = String(parts[0])
+        guard mappings[name] == nil else {
+            throw SceneArchiveError.invalid("Duplicate --class mapping for " + name)
+        }
+        mappings[name] = nodeClass
+    }
+    return mappings
+}
+
+struct ViewerAtlasKey: Hashable {
+    let name: String
+    let filtering: TextureFiltering
+}
+
+let arguments = Array(CommandLine.arguments.dropFirst())
+let muteOptions = arguments.filter { $0 == "--mute" }
+let muteSounds = !muteOptions.isEmpty
+if muteSounds {
+    guard muteOptions.count == 1, arguments.contains("--sks"), !arguments.contains("--tmx") else {
+        throw SceneArchiveError.invalid("--mute may be supplied once and requires --sks")
+    }
+}
+let frameOptions = arguments.indices.filter { arguments[$0] == "--frames" }
+var frameLimit: Int?
+if let index = frameOptions.first {
+    guard frameOptions.count == 1, arguments.indices.contains(index + 1),
+          let count = Int(arguments[index + 1]), (1...1_000_000).contains(count) else {
+        throw SceneArchiveError.invalid("--frames requires one integer between 1 and 1000000")
+    }
+    frameLimit = count
+}
+let nodeClassMappings = try customNodeClasses(arguments: arguments)
+var atlasDirectories: [String: URL] = [:]
+for index in arguments.indices where arguments[index] == "--atlas" {
+    guard arguments.contains("--sks"), !arguments.contains("--tmx"),
+          arguments.indices.contains(index + 1), !arguments[index + 1].hasPrefix("--") else {
+        throw SceneArchiveError.invalid("--atlas requires --sks and a .atlas or .atlasc directory")
+    }
+    let directory = URL(fileURLWithPath: arguments[index + 1])
+    let name = directory.deletingPathExtension().lastPathComponent
+    guard ["atlas", "atlasc"].contains(directory.pathExtension), !name.isEmpty else {
+        throw SceneArchiveError.invalid("--atlas expects a .atlas or .atlasc directory")
+    }
+    guard atlasDirectories[name] == nil else {
+        throw SceneArchiveError.invalid("Duplicate atlas name: " + name)
+    }
+    atlasDirectories[name] = directory
+}
+var decodedAtlases: [String: DecodedAtlas] = [:]
+for name in atlasDirectories.keys.sorted() {
+    if let directory = atlasDirectories[name] {
+        decodedAtlases[name] = try await SpriteKitAtlas.decode(at: directory)
+    }
+}
+var uploadedAtlases: [ViewerAtlasKey: [TextureAtlas]] = [:]
 let window = try SpriteSDL.SDLWindow(title: "sprite-viewer", width: 960, height: 640)
 let backend = SDLRenderBackend(window: window)
 
@@ -350,7 +420,7 @@ if let option = CommandLine.arguments.firstIndex(of: "--tmx") {
         throw SceneArchiveError.invalid("Usage: sprite-viewer --sks path/to/scene.sks")
     }
     let url = URL(fileURLWithPath: CommandLine.arguments[option + 1])
-    let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: url))
+    let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: url), customNodeClasses: nodeClassMappings)
     for diagnostic in archive.diagnostics { print(diagnostic) }
     var tileSets: [String: SpriteKitTileSetArchive] = [:]
     if let setsOption = CommandLine.arguments.firstIndex(of: "--tilesets") {
@@ -368,14 +438,44 @@ if let option = CommandLine.arguments.firstIndex(of: "--tmx") {
     // Preview uses the built-in bitmap font; applications can supply their own font mapping.
     let font = try BitmapFont.debug(backend: backend)
     let root = try archive.makeNode(textureResolver: { reference in
-        guard reference.atlasName == nil, reference.subtextureName == nil else {
-            throw SceneArchiveError.unsupported("Viewer requires loose PNG textures")
+        if let atlasName = reference.atlasName {
+            let atlasURL = URL(fileURLWithPath: atlasName)
+            let name = ["atlas", "atlasc"].contains(atlasURL.pathExtension)
+                ? atlasURL.deletingPathExtension().lastPathComponent : atlasURL.lastPathComponent
+            guard let decoded = decodedAtlases[name] else {
+                throw SceneArchiveError.missingTexture("Atlas " + atlasName + " (supply --atlas)")
+            }
+            let key = ViewerAtlasKey(name: name, filtering: reference.filtering)
+            if uploadedAtlases[key] == nil {
+                uploadedAtlases[key] = try decoded.makeTextureAtlases(backend: backend, filtering: reference.filtering)
+            }
+            let textureName = SpriteKitAtlas.textureName(reference.subtextureName ?? reference.imageName)
+            guard let texture = uploadedAtlases[key]?[texture: textureName] else {
+                throw SceneArchiveError.missingTexture(atlasName + "/" + textureName)
+            }
+            return texture
+        }
+        guard reference.subtextureName == nil else {
+            throw SceneArchiveError.unsupported("Atlas subtexture without an atlas name")
         }
         var imageURL = URL(fileURLWithPath: reference.imageName, relativeTo: url.deletingLastPathComponent())
         if imageURL.pathExtension.isEmpty { imageURL.appendPathExtension("png") }
         let pixels = try PixelBuffer(png: Array(Data(contentsOf: imageURL)))
         return try backend.makeTexture(pixels, filtering: reference.filtering)
-    }, fontResolver: { _ in font }, tileSetResolver: { tileSets[$0] })
+    }, fontResolver: { _ in font }, tileSetResolver: { tileSets[$0] }, referenceResolver: { name in
+        // All named resources share the root archive's directory, like a resource bundle.
+        var referenceURL = URL(fileURLWithPath: name, relativeTo: url.deletingLastPathComponent())
+        if referenceURL.pathExtension.isEmpty { referenceURL.appendPathExtension("sks") }
+        guard FileManager.default.fileExists(atPath: referenceURL.path) else { return nil }
+        let referenced = try SpriteKitSceneArchive.decode(Data(contentsOf: referenceURL),
+            customNodeClasses: nodeClassMappings)
+        for diagnostic in referenced.diagnostics { print("\(name): \(diagnostic)") }
+        return referenced
+    }, soundResolver: { name in
+        guard muteSounds else { return nil }
+        print("Muted archived sound: \(name) (action timing preserved).")
+        return { _ in }
+    })
     if let archivedScene = root as? Scene {
         scene = archivedScene
     } else {
@@ -387,6 +487,7 @@ if let option = CommandLine.arguments.firstIndex(of: "--tmx") {
 }
 var running = true
 var lastTicks = SDL.ticks
+var renderedFrames = 0
 
 while running {
     for event in window.pollEvents() {
@@ -395,9 +496,14 @@ while running {
         (scene as? DemoScene)?.handle(event)
     }
     let now = SDL.ticks
-    let deltaTime = Duration.nanoseconds(Int64(now - lastTicks))
+    let deltaTime = frameLimit == nil ? Duration.nanoseconds(Int64(now - lastTicks)) : .seconds(1.0 / 60)
     lastTicks = now
     try scene.present(on: backend, deltaTime: deltaTime)
     // Paused scenes skip `update`, so refresh the HUD directly.
     if scene.isPaused { scene.didFinishUpdate() }
+    renderedFrames += 1
+    if renderedFrames == frameLimit {
+        print("Rendered \(renderedFrames) frames.")
+        running = false
+    }
 }

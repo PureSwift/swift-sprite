@@ -5,6 +5,74 @@ import SpriteGraph
 @testable import SpriteFormats
 
 @Suite struct SceneArchiveActionTests {
+    @MainActor private final class PlaybackLog {
+        var nodes: [String] = []
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func resolvesAndSchedulesSounds(format: String) throws {
+        let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/sound-actions." + format)))
+        #expect(throws: SceneArchiveError.missingSound("beep.wav")) { try archive.makeNode() }
+        let log = PlaybackLog()
+        var requests = 0
+        let scene = try #require(archive.makeNode(soundResolver: { name in
+            requests += 1
+            #expect(name == "beep.wav")
+            return { node in log.nodes.append(node.name ?? "") }
+        }) as? Scene)
+        #expect(requests == 1 && log.nodes.isEmpty)
+        let waiting = try #require(scene.children.first { $0.name == "waiting" })
+        let immediate = try #require(scene.children.first { $0.name == "immediate" })
+        scene.isPaused = true
+        scene.advance(by: .seconds(1))
+        #expect(log.nodes.isEmpty)
+        scene.isPaused = false
+        scene.advance(by: .milliseconds(125))
+        #expect(log.nodes == ["waiting", "immediate"])
+        #expect(waiting.position.x == 0 && immediate.position.x == 5)
+        scene.advance(by: .milliseconds(250))
+        #expect(log.nodes.count == 2)
+        #expect(waiting.position.x == 5 && immediate.position.x == 10)
+        waiting.removeAllActions()
+        scene.advance(by: .seconds(1))
+        #expect(log.nodes.count == 2 && waiting.position.x == 5)
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func repeatsLibrarySounds(format: String) throws {
+        let library = try SpriteKitActionArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/sound-library." + format)))
+        #expect(throws: SceneArchiveError.missingSound("beep.wav")) { try library.makeAction(named: "Beep") }
+        let log = PlaybackLog()
+        var requests = 0
+        let action = try #require(try library.makeAction(named: "Beep", soundResolver: { _ in
+            requests += 1
+            return { node in log.nodes.append(node.name ?? "") }
+        }))
+        #expect(requests == 1 && log.nodes.isEmpty)
+        let scene = Scene(size: [100, 100])
+        scene.name = "scene"
+        scene.run(action)
+        scene.advance(by: .milliseconds(375))
+        #expect(log.nodes == ["scene", "scene"])
+        scene.advance(by: .seconds(1))
+        #expect(!scene.hasActions && log.nodes.count == 2)
+        scene.run(action)
+        scene.removeAllActions()
+        scene.advance(by: .seconds(1))
+        #expect(log.nodes.count == 2)
+    }
+
+    @Test func rejectsMalformedSoundActions() throws {
+        for fields: [String: PropertyValue] in [[:], ["_fileName": .string("")],
+            ["_fileName": .string("beep"), "_wait": .bool(false), "_duration": .number(1)],
+            ["_fileName": .string("beep"), "_position": .string("{1, 2}")],
+            ["_fileName": .string("beep"), "_wait": .string("yes")]] {
+            let (graph, node) = try archive(actionFields: fields, className: "SKPlaySound")
+            var decoder = ArchiveActionDecoder(graph: graph)
+            #expect(throws: SceneArchiveError.self) { try decoder.actions(node) }
+        }
+    }
+
     @MainActor @Test(arguments: ["sks", "xml"])
     func loadsNamedActionLibraries(format: String) async throws {
         let library = try await SpriteKitActionArchive.decode(at: Fixtures.url("SceneArchives/action-library." + format))
@@ -94,6 +162,74 @@ import SpriteGraph
         #expect(!cancelled.hasActions)
     }
 
+    @MainActor @Test(arguments: ["sks", "xml"], [false, true])
+    func restoresScheduledTextureReplacement(format: String, preserveSize: Bool) throws {
+        let data = try Data(contentsOf: Fixtures.url("SceneArchives/set-texture-actions." + format))
+        var plist = try #require(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        if preserveSize {
+            var objects = try #require(plist["$objects"] as? [Any])
+            for index in objects.indices {
+                guard var fields = objects[index] as? [String: Any], fields["_textures"] != nil else { continue }
+                fields["_resize"] = false
+                objects[index] = fields
+            }
+            plist["$objects"] = objects
+        }
+        let archive = try SpriteKitSceneArchive.decode(PropertyListSerialization.data(
+            fromPropertyList: plist, format: format == "sks" ? .binary : .xml, options: 0))
+        #expect(throws: SceneArchiveError.self) { try archive.makeNode() }
+        var requests = 0
+        let scene = try #require(archive.makeNode(textureResolver: { _ in
+            requests += 1
+            return Texture(id: TextureID(rawValue: 9), textureSize: [80, 40])
+        }) as? Scene)
+        let sprites = scene.children.compactMap { $0 as? Sprite }
+        #expect(sprites.count == 2 && requests == 1)
+        #expect(sprites.allSatisfy { $0.texture == nil })
+        scene.advance(by: .milliseconds(250))
+        #expect(sprites.allSatisfy { $0.texture == nil })
+        scene.advance(by: .milliseconds(500))
+        #expect(sprites.map { $0.texture?.size } == [[40, 40], [40, 40]])
+        #expect(sprites.map(\.size) == (preserveSize ? [[12, 8], [12, 8]] : [[40, 40], [40, 40]]))
+        scene.advance(by: .milliseconds(500))
+        #expect(sprites.map { $0.texture?.size } == [[80, 40], [80, 40]])
+        #expect(sprites.map(\.size) == (preserveSize ? [[12, 8], [12, 8]] : [[80, 40], [80, 40]]))
+        #expect(sprites.allSatisfy { !$0.hasActions })
+        let cancelled = try archive.makeNode(textureResolver: { _ in
+            Texture(id: TextureID(rawValue: 10), textureSize: [80, 40])
+        })
+        cancelled.children.forEach { $0.removeAllActions() }
+        let cancelledScene = try #require(cancelled as? Scene)
+        cancelledScene.advance(by: .seconds(2))
+        #expect(cancelled.children.compactMap { $0 as? Sprite }.allSatisfy { $0.texture == nil })
+    }
+
+    @Test func rejectsMalformedTextureReplacement() throws {
+        let graph = try KeyedArchive(ArchivePropertyList.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/set-texture-actions.sks"))))
+        let id = try #require(graph.objects.firstIndex { value in
+            guard let fields = value.dictionary else { return false }
+            return (try? graph.className(fields)) == "SKAnimate"
+        })
+        let fields = try graph.dictionary(.uid(id))
+        let textures = try graph.array(fields["_textures"])
+        for changes: [String: PropertyValue] in [
+            ["_restore": .bool(true)], ["_resize": .string("yes")],
+            ["_textures": .array([])], ["_textures": .array(textures + textures)],
+            ["_duration": .number(0.000001)]
+        ] {
+            var objects = graph.objects
+            objects[id] = .dictionary(fields.merging(changes) { _, new in new })
+            let modified = try KeyedArchive(.dictionary(["$archiver": .string("NSKeyedArchiver"),
+                "$version": .number(100_000), "$top": .dictionary(["root": .uid(graph.rootID)]),
+                "$objects": .array(objects)]))
+            var decoder = ArchiveActionDecoder(graph: modified)
+            #expect(throws: SceneArchiveError.self) {
+                try decoder.actions(["_actions": .array([.uid(id)])])
+            }
+        }
+    }
+
     @Test func rejectsMalformedTextureAnimations() throws {
         let graph = try KeyedArchive(ArchivePropertyList.decode(Data(contentsOf: Fixtures.url("SceneArchives/texture-actions.sks"))))
         let id = try #require(graph.objects.firstIndex { value in
@@ -173,6 +309,245 @@ import SpriteGraph
         return (graph, fields)
     }
 
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresColorActions(format: String) throws {
+        let archive = try SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/color-actions." + format)))
+        let scene = try #require(archive.makeNode() as? Scene)
+        let color = try #require(scene.children[0] as? Sprite)
+        let blend = try #require(scene.children[1] as? Sprite)
+        let repeated = try #require(scene.children[2] as? Sprite)
+        scene.advance(by: .seconds(1))
+        #expect(abs(color.color.red - 0.5) < 0.00001 && abs(color.color.blue - 0.5) < 0.00001)
+        #expect(color.colorBlendFactor == 0.375)
+        #expect(blend.color == .blue && abs(blend.colorBlendFactor - 0.5) < 0.00001)
+        #expect(repeated.color == .blue && repeated.hasActions)
+        scene.advance(by: .seconds(1))
+        #expect(color.color == .red && color.colorBlendFactor == 0.75)
+        #expect(blend.color == .blue && abs(blend.colorBlendFactor - 0.2) < 0.00001)
+        #expect(repeated.color == .blue && repeated.colorBlendFactor == 0)
+        #expect(scene.children.allSatisfy { !$0.hasActions })
+        let other = try archive.makeNode()
+        let independent = try #require(other.children[0] as? Sprite)
+        #expect(independent.color == .blue && independent.colorBlendFactor == 0)
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresIndependentScaleAxes(format: String) throws {
+        let scene = try #require(SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/axis-scale-actions." + format))).makeNode() as? Scene)
+        scene.advance(by: .seconds(1))
+        #expect(scene.children.map(\.scale) == [[3, 3], [2, 0.5], [3, 0.5]])
+        scene.children[0].scale.y = 9
+        scene.children[1].scale.x = 8
+        scene.advance(by: .seconds(1))
+        #expect(scene.children.map(\.scale) == [[4, 9], [8, -2], [4, -2]])
+        #expect(scene.children.allSatisfy { !$0.hasActions })
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresSpriteResizeActions(format: String) throws {
+        let scene = try #require(SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/resize-actions." + format))).makeNode() as? Scene)
+        let sprites = scene.children.compactMap { $0 as? Sprite }
+        #expect(sprites.count == 6)
+        scene.advance(by: .seconds(1))
+        #expect(sprites.map(\.size) == [[30, 45], [30, 30], [20, 45], [30, 45], [25, 25], [30, 25]])
+        sprites[1].size.y = 90
+        sprites[2].size.x = 80
+        scene.advance(by: .seconds(1))
+        #expect(sprites.map(\.size) == [[40, 60], [40, 90], [80, 60], [40, 60], [30, 20], [40, 20]])
+        #expect(sprites.allSatisfy { !$0.hasActions })
+    }
+
+    @Test func rejectsMalformedResizeActions() throws {
+        let valid: [String: PropertyValue] = [
+            "_useW": .bool(true), "_useH": .bool(true),
+            "_sizeTarget.width": .number(40), "_sizeTarget.height": .number(60)
+        ]
+        for change: [String: PropertyValue] in [
+            ["_useW": .bool(false), "_useH": .bool(false)],
+            ["_useW": .string("yes")], ["_sizeTarget.width": .null],
+            ["_sizeTarget.height": .number(.nan)], ["_sizeTarget.width": .number(.infinity)],
+            ["_sizeResidual.width": .number(1)], ["_sizeResidual.height": .number(1)]
+        ] {
+            let (graph, node) = try archive(actionFields: valid.merging(change) { _, new in new },
+                className: "SKResize")
+            var decoder = ArchiveActionDecoder(graph: graph)
+            #expect(throws: SceneArchiveError.self) { try decoder.actions(node) }
+        }
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresSizeBasedScaling(format: String) throws {
+        let scene = try #require(SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/size-scale-actions." + format))).makeNode() as? Scene)
+        let sprites = scene.children.compactMap { $0 as? Sprite }
+        #expect(sprites.count == 2)
+        scene.advance(by: .seconds(1))
+        #expect(sprites.map(\.scale) == [[3, 2], [2, 1]])
+        #expect(sprites.map(\.size) == [[20, 30], [40, 60]])
+        scene.advance(by: .seconds(1))
+        #expect(sprites.map(\.scale) == [[4, 3], [2, 2]])
+        #expect(sprites.map(\.size) == [[20, 30], [40, 60]])
+        #expect(sprites.allSatisfy { !$0.hasActions })
+    }
+
+    @Test func rejectsInvalidSizeBasedScaling() throws {
+        let valid: [String: PropertyValue] = [
+            "_useX": .bool(true), "_useY": .bool(true), "_isTargetSizeBased": .bool(true),
+            "_targetSize": .string("{40, 60}")
+        ]
+        for change: [String: PropertyValue] in [
+            ["_targetSize": .null], ["_targetSize": .string("invalid")],
+            ["_targetSize": .string("{inf, 60}")], ["_isRelative": .bool(true)],
+            ["_useX": .bool(false)]
+        ] {
+            let (graph, node) = try archive(actionFields: valid.merging(change) { _, new in new },
+                className: "SKScale")
+            var decoder = ArchiveActionDecoder(graph: graph)
+            #expect(throws: SceneArchiveError.self) { try decoder.actions(node) }
+        }
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresNodeSpeedActions(format: String) throws {
+        let scene = try #require(SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/speed-actions." + format))).makeNode() as? Scene)
+        // This SDK omits node speed from the archive; relative actions capture runtime speed.
+        #expect(scene.children.map(\.speed) == [1, 1, 1])
+        scene.children[1].speed = 2
+        scene.isPaused = true
+        scene.advance(by: .seconds(1))
+        #expect(scene.children.map(\.speed) == [1, 2, 1])
+        scene.isPaused = false
+        scene.advance(by: .milliseconds(500))
+        #expect(scene.children.map(\.speed) == [1.25, 1.5, 0])
+        scene.advance(by: .milliseconds(500))
+        #expect(scene.children.map(\.speed) == [1.5625, 1.125, 0])
+        scene.advance(by: .seconds(3))
+        #expect(scene.children.map(\.speed) == [2, 1, 0])
+        #expect(scene.children.allSatisfy { !$0.hasActions })
+    }
+
+    @Test func rejectsMalformedSpeedActions() throws {
+        for fields: [String: PropertyValue] in [
+            [:], ["_speedTarget": .number(-1)], ["_speedTarget": .number(.infinity)],
+            ["_speedTarget": .number(.nan)], ["_speedTarget": .string("fast")],
+            ["_speedTarget": .number(2), "_isRelative": .string("yes")],
+            ["_speedTarget": .number(2), "_deltaSpeed": .number(0.5)]
+        ] {
+            let (graph, node) = try archive(actionFields: fields, className: "SKSpeed")
+            var decoder = ArchiveActionDecoder(graph: graph)
+            #expect(throws: SceneArchiveError.self) { try decoder.actions(node) }
+        }
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresReversedRelativeActions(format: String) throws {
+        let archive = try SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/reversed-actions." + format)))
+        let scene = try #require(archive.makeNode() as? Scene)
+        let sprites = scene.children.compactMap { $0 as? Sprite }
+        #expect(sprites.count == 3)
+        scene.advance(by: .seconds(1))
+        #expect(sprites[0].position == [0, 17])
+        #expect(sprites[1].zRotation == 0)
+        #expect(sprites[2].size == [15, 35])
+        scene.advance(by: .seconds(1))
+        #expect(sprites[0].position == [-5, 27])
+        #expect(sprites[1].zRotation == -0.5)
+        #expect(sprites[2].size == [10, 40])
+        scene.advance(by: .seconds(2))
+        #expect(sprites.allSatisfy { $0.position == [5, 7] && $0.zRotation == 0.5 && $0.size == [20, 30] })
+        #expect(sprites.allSatisfy { !$0.hasActions })
+        let independent = try #require(archive.makeNode() as? Scene)
+        #expect(independent.children.allSatisfy { $0.position == [5, 7] && $0.hasActions })
+    }
+
+    @Test func rejectsUnsupportedOrPartiallyExecutedReversedActions() throws {
+        for name in ["SKMove", "SKRotate", "SKResize"] {
+            for changes: [String: PropertyValue] in [
+                ["_isRelative": .bool(false)], ["_lastRatio": .number(0.5)],
+                ["_hasFired": .bool(true)], ["_finished": .bool(true)]
+            ] {
+                let fields: [String: PropertyValue] = ["_isReversed": .bool(true), "_isRelative": .bool(true)]
+                let (graph, node) = try archive(actionFields: fields.merging(changes) { _, new in new }, className: name)
+                var decoder = ArchiveActionDecoder(graph: graph)
+                #expect(throws: SceneArchiveError.self) { try decoder.actions(node) }
+            }
+        }
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresReversedScalingAndCompositeOrder(format: String) throws {
+        let scene = try #require(SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/reversed-scale-actions." + format))).makeNode() as? Scene)
+        #expect(scene.children.count == 3)
+        scene.advance(by: .seconds(1))
+        #expect(scene.children.map(\.scale) == [[1.5, 2.5], [1.5, 2.5], [1.5, 2.5]])
+        #expect(scene.children.map(\.position) == [[0, 0], [0, 0], [-5, 0]])
+        scene.advance(by: .seconds(1))
+        #expect(scene.children.map(\.scale) == [[1, 1], [1, 1], [1, 1]])
+        #expect(scene.children.map(\.position) == [[0, 0], [0, 0], [-10, 0]])
+        scene.advance(by: .seconds(2))
+        #expect(scene.children.map(\.scale) == [[2, 4], [1, 1], [1, 1]])
+        #expect(scene.children.map(\.position) == [[0, 0], [-10, 0], [-10, 0]])
+        #expect(scene.children.allSatisfy { !$0.hasActions })
+    }
+
+    @Test func rejectsMalformedReversedScaling() throws {
+        let valid: [String: PropertyValue] = [
+            "_isReversed": .bool(true), "_isRelative": .bool(true),
+            "_useX": .bool(true), "_useY": .bool(true),
+            "_scaleTargetX": .number(0.5), "_scaleTargetY": .number(0.25)
+        ]
+        for changes: [String: PropertyValue] in [
+            ["_isRelative": .bool(false)], ["_useX": .bool(false)],
+            ["_isTargetSizeBased": .bool(true)],
+            ["_scaleTargetX": .number(.infinity)], ["_scaleTargetY": .number(.nan)],
+            ["_deltaScaleX": .number(1)], ["_deltaScaleY": .number(1)]
+        ] {
+            let (graph, node) = try archive(actionFields: valid.merging(changes) { _, new in new },
+                className: "SKScale")
+            var decoder = ArchiveActionDecoder(graph: graph)
+            #expect(throws: SceneArchiveError.self) { try decoder.actions(node) }
+        }
+    }
+
+    @Test func rejectsInvalidScaleActions() throws {
+        for fields: [String: PropertyValue] in [
+            ["_useX": .bool(false), "_useY": .bool(false)],
+            ["_useX": .bool(true), "_scaleTargetX": .number(.infinity)],
+            ["_useY": .bool(true), "_isTargetSizeBased": .bool(true)],
+            ["_useX": .bool(true), "_isRelative": .bool(true)]
+        ] {
+            let (graph, node) = try archive(actionFields: fields, className: "SKScale")
+            var decoder = ArchiveActionDecoder(graph: graph)
+            #expect(throws: SceneArchiveError.self) { try decoder.actions(node) }
+        }
+    }
+
+    @Test func rejectsMalformedColorActions() throws {
+        let valid: [String: PropertyValue] = [
+            "_duration": .number(1), "_colorMix": .number(0.5), "_isMixOnly": .bool(false),
+            "_colorBlendR": .number(1), "_colorBlendG": .number(0),
+            "_colorBlendB": .number(0), "_colorBlendA": .number(1)
+        ]
+        for change: [String: PropertyValue] in [
+            ["_colorMix": .number(-0.1)], ["_colorMix": .number(1.1)],
+            ["_colorMix": .number(.nan)], ["_colorMix": .null],
+            ["_isMixOnly": .string("yes")], ["_isMixOnly": .null],
+            ["_colorBlendR": .number(.infinity)], ["_colorBlendG": .number(-1)],
+            ["_colorBlendB": .number(2)], ["_colorBlendA": .null]
+        ] {
+            let (graph, fields) = try archive(actionFields: valid.merging(change) { _, new in new },
+                className: "SKColorize")
+            var decoder = ArchiveActionDecoder(graph: graph)
+            #expect(throws: SceneArchiveError.self) { try decoder.actions(fields) }
+        }
+    }
+
     @Test func rejectsMalformedAndUnsupportedActions() throws {
         for fields: [String: PropertyValue] in [["_duration": .number(-1)],
             ["_duration": .number(.infinity)], ["_timingMode": .number(99)],
@@ -181,7 +556,7 @@ import SpriteGraph
             var decoder = ArchiveActionDecoder(graph: graph)
             #expect(throws: SceneArchiveError.self) { try decoder.actions(node) }
         }
-        for name in ["SKRunBlock", "SKPlaySound", "CustomAction"] {
+        for name in ["SKRunBlock", "CustomAction"] {
             let (graph, node) = try archive(actionFields: [:], className: name)
             var decoder = ArchiveActionDecoder(graph: graph)
             #expect(throws: SceneArchiveError.unsupported("Action class \(name)")) { try decoder.actions(node) }

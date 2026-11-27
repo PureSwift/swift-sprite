@@ -60,8 +60,27 @@ extension Action {
             }
         case let .scaleTo(x, y):
             return interpolating(from: { $0.scale }) { node, start, t in
-                let target = Vector2(x ?? start.x, y ?? start.y)
-                node.scale = start + (target - start) * t
+                if let x { node.scale.x = start.x + (x - start.x) * t }
+                if let y { node.scale.y = start.y + (y - start.y) * t }
+            }
+        case let .scaleToSize(size):
+            return interpolating(from: { node -> (Vector2, Vector2) in
+                let start = node.scale
+                guard let sprite = node as? Sprite else { return (start, start) }
+                var target = start
+                for axis in 0..<2 where sprite.size[axis] != 0 {
+                    let value = size[axis] / sprite.size[axis]
+                    if value.isFinite { target[axis] = value }
+                }
+                return (start, target)
+            }) { node, values, t in
+                guard node is Sprite else { return }
+                node.scale = values.0 + (values.1 - values.0) * t
+            }
+        case let .changeSpeed(value, relative):
+            return interpolating(from: { $0.speed }) { node, start, t in
+                let target = relative ? start * value : value
+                node.speed = start + (target - start) * t
             }
         case let .fade(by: delta):
             return incremental { node, step in node.alpha += delta * step }
@@ -72,8 +91,13 @@ extension Action {
         case let .resize(width, height):
             return interpolating(from: { ($0 as? Sprite)?.size ?? .zero }) { node, start, t in
                 guard let sprite = node as? Sprite else { return }
-                let target = Vector2(width ?? start.x, height ?? start.y)
-                sprite.size = start + (target - start) * t
+                if let width { sprite.size.x = start.x + (width - start.x) * t }
+                if let height { sprite.size.y = start.y + (height - start.y) * t }
+            }
+        case let .resizeBy(delta):
+            return incremental { node, step in
+                guard let sprite = node as? Sprite else { return }
+                sprite.size += delta * step
             }
         case let .colorize(color, blendFactor):
             return interpolating(from: { node -> (Color, Float) in

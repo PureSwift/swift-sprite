@@ -364,3 +364,249 @@ for (name, root) in [("references", referenceScene), ("reference-target", refere
             .write(to: directory.appendingPathComponent(name + "." + suffix))
     }
 }
+
+// Set duration explicitly so generation does not depend on a bundled audio asset.
+let waitingSound = SKAction.playSoundFileNamed("beep.wav", waitForCompletion: true)
+waitingSound.duration = 0.25
+let immediateSound = SKAction.playSoundFileNamed("beep.wav", waitForCompletion: false)
+let soundScene = SKScene(size: CGSize(width: 100, height: 100))
+for (name, action) in [("waiting", waitingSound), ("immediate", immediateSound)] {
+    let node = SKNode()
+    node.name = name
+    node.run(SKAction.sequence([action, SKAction.moveBy(x: 10, y: 0, duration: 0.25)]), withKey: "sound")
+    soundScene.addChild(node)
+}
+for (name, root): (String, Any) in [("sound-actions", soundScene),
+    ("sound-library", ["actions": ["Beep": SKAction.repeat(waitingSound, count: 2)]])] {
+    let archive = try tilePlist(root)
+    for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+        try PropertyListSerialization.data(fromPropertyList: archive, format: format, options: 0)
+            .write(to: directory.appendingPathComponent(name + "." + suffix))
+    }
+}
+
+let compoundScene = SKScene(size: CGSize(width: 200, height: 200))
+compoundScene.physicsWorld.gravity = .zero
+let compoundNode = SKNode()
+compoundNode.physicsBody = SKPhysicsBody(bodies: [
+    SKPhysicsBody(circleOfRadius: 12, center: CGPoint(x: 2, y: 3)),
+    SKPhysicsBody(rectangleOf: CGSize(width: 30, height: 20), center: CGPoint(x: 40, y: 5))
+])
+compoundNode.physicsBody?.mass = 2
+compoundNode.physicsBody?.linearDamping = 0
+compoundNode.physicsBody?.velocity = CGVector(dx: 10, dy: 0)
+compoundScene.addChild(compoundNode)
+let compoundArchive = try tilePlist(compoundScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: compoundArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("compound-physics." + suffix))
+}
+
+let edgeScene = SKScene(size: CGSize(width: 400, height: 200))
+let edgePath = CGMutablePath()
+edgePath.move(to: CGPoint(x: 10, y: 20))
+edgePath.addLine(to: CGPoint(x: 40, y: 20))
+edgePath.addLine(to: CGPoint(x: 40, y: 60))
+let edgeBodies = [
+    SKPhysicsBody(edgeFrom: CGPoint(x: 2, y: 3), to: CGPoint(x: 40, y: 5)),
+    SKPhysicsBody(edgeChainFrom: edgePath),
+    SKPhysicsBody(edgeLoopFrom: edgePath),
+    SKPhysicsBody(edgeLoopFrom: CGRect(x: 10, y: 20, width: 30, height: 40))
+]
+for (index, body) in edgeBodies.enumerated() {
+    let node = SKNode()
+    node.position.x = CGFloat(index * 100)
+    node.physicsBody = body
+    body.velocity = CGVector(dx: 10, dy: 20)
+    body.angularVelocity = 1
+    edgeScene.addChild(node)
+}
+let edgeArchive = try tilePlist(edgeScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: edgeArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("edge-physics." + suffix))
+}
+
+let pinnedScene = SKScene(size: CGSize(width: 400, height: 400))
+let pinnedNode = SKNode()
+pinnedNode.position = CGPoint(x: 100, y: 200)
+pinnedNode.physicsBody = SKPhysicsBody(circleOfRadius: 12, center: CGPoint(x: 30, y: 0))
+pinnedNode.physicsBody?.pinned = true
+pinnedNode.physicsBody?.angularDamping = 0
+pinnedScene.addChild(pinnedNode)
+let pinnedArchive = try tilePlist(pinnedScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: pinnedArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("pinned-physics." + suffix))
+}
+
+@objc(FixtureGameScene) final class FixtureGameScene: SKScene {
+    override class var supportsSecureCoding: Bool { true }
+    override func encode(with coder: NSCoder) {
+        super.encode(with: coder)
+        coder.encode(42, forKey: "customScore")
+    }
+}
+@objc(FixtureGameSprite) final class FixtureGameSprite: SKSpriteNode {
+    override class var supportsSecureCoding: Bool { true }
+}
+let customScene = FixtureGameScene(size: CGSize(width: 320, height: 240))
+customScene.name = "custom-scene"
+let customSprite = FixtureGameSprite(color: .red, size: CGSize(width: 20, height: 30))
+customSprite.name = "custom-sprite"
+customSprite.position = CGPoint(x: 40, y: 50)
+customScene.addChild(customSprite)
+let customArchive = try tilePlist(customScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: customArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("custom-classes." + suffix))
+}
+
+let colorScene = SKScene(size: CGSize(width: 200, height: 100))
+let colorActions = [
+    SKAction.colorize(with: .red, colorBlendFactor: 0.75, duration: 2),
+    SKAction.colorize(withColorBlendFactor: 0.2, duration: 2),
+    SKAction.repeat(SKAction.sequence([
+        SKAction.colorize(with: .red, colorBlendFactor: 1, duration: 0.5),
+        SKAction.colorize(with: .blue, colorBlendFactor: 0, duration: 0.5)
+    ]), count: 2)
+]
+for (index, action) in colorActions.enumerated() {
+    let sprite = SKSpriteNode(color: .blue, size: CGSize(width: 20, height: 20))
+    sprite.colorBlendFactor = index == 1 ? 0.8 : 0
+    sprite.position.x = CGFloat(index * 40)
+    sprite.run(action, withKey: "color")
+    colorScene.addChild(sprite)
+}
+let colorActionArchive = try tilePlist(colorScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: colorActionArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("color-actions." + suffix))
+}
+let axisScaleScene = SKScene(size: CGSize(width: 200, height: 100))
+for action in [
+    SKAction.scaleX(to: 4, duration: 2),
+    SKAction.scaleY(to: -2, duration: 2),
+    SKAction.group([SKAction.scaleX(to: 4, duration: 2), SKAction.scaleY(to: -2, duration: 2)])
+] {
+    let node = SKNode()
+    node.xScale = 2
+    node.yScale = 3
+    node.run(action, withKey: "scale")
+    axisScaleScene.addChild(node)
+}
+let axisScaleArchive = try tilePlist(axisScaleScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: axisScaleArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("axis-scale-actions." + suffix))
+}
+
+let resizeScene = SKScene(size: CGSize(width: 200, height: 100))
+for action in [
+    SKAction.resize(toWidth: 40, height: 60, duration: 2),
+    SKAction.resize(toWidth: 40, duration: 2),
+    SKAction.resize(toHeight: 60, duration: 2),
+    SKAction.group([SKAction.resize(toWidth: 40, duration: 2), SKAction.resize(toHeight: 60, duration: 2)]),
+    SKAction.resize(byWidth: 10, height: -10, duration: 2),
+    SKAction.repeat(SKAction.resize(byWidth: 10, height: -5, duration: 1), count: 2)
+] {
+    let sprite = SKSpriteNode(color: .blue, size: CGSize(width: 20, height: 30))
+    sprite.run(action, withKey: "resize")
+    resizeScene.addChild(sprite)
+}
+let resizeArchive = try tilePlist(resizeScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: resizeArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("resize-actions." + suffix))
+}
+
+let sizeScaleScene = SKScene(size: CGSize(width: 200, height: 100))
+for action in [
+    SKAction.scale(to: CGSize(width: 80, height: 90), duration: 2),
+    SKAction.sequence([
+        SKAction.resize(toWidth: 40, height: 60, duration: 1),
+        SKAction.scale(to: CGSize(width: 80, height: 120), duration: 1)
+    ])
+] {
+    let sprite = SKSpriteNode(color: .blue, size: CGSize(width: 20, height: 30))
+    sprite.xScale = 2
+    sprite.yScale = 1
+    sprite.run(action, withKey: "size-scale")
+    sizeScaleScene.addChild(sprite)
+}
+let sizeScaleArchive = try tilePlist(sizeScaleScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: sizeScaleArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("size-scale-actions." + suffix))
+}
+
+let setTextureScene = SKScene(size: CGSize(width: 100, height: 100))
+for resize in [false, true] {
+    let sprite = SKSpriteNode(color: .white, size: CGSize(width: 12, height: 8))
+    sprite.run(.sequence([
+        .wait(forDuration: 0.5),
+        .setTexture(croppedTile, resize: resize),
+        .wait(forDuration: 0.5),
+        .setTexture(tileTexture, resize: resize)
+    ]), withKey: "texture")
+    setTextureScene.addChild(sprite)
+}
+let setTextureArchive = try tilePlist(setTextureScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: setTextureArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("set-texture-actions." + suffix))
+}
+
+let speedScene = SKScene(size: CGSize(width: 100, height: 100))
+for (initialSpeed, action) in [
+    (CGFloat(1), SKAction.speed(to: 2, duration: 2)),
+    (CGFloat(2), SKAction.speed(by: 0.5, duration: 2)),
+    (CGFloat(1), SKAction.speed(to: 0, duration: 0))
+] {
+    let node = SKNode()
+    node.speed = initialSpeed
+    node.run(action, withKey: "speed")
+    speedScene.addChild(node)
+}
+let speedArchive = try tilePlist(speedScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: speedArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("speed-actions." + suffix))
+}
+
+let reversedScene = SKScene(size: CGSize(width: 100, height: 100))
+for action in [
+    SKAction.moveBy(x: 10, y: -20, duration: 2),
+    SKAction.rotate(byAngle: 1, duration: 2),
+    SKAction.resize(byWidth: 10, height: -10, duration: 2)
+] {
+    let sprite = SKSpriteNode(color: .white, size: CGSize(width: 20, height: 30))
+    sprite.position = CGPoint(x: 5, y: 7)
+    sprite.zRotation = 0.5
+    sprite.run(.sequence([action.reversed(), action]), withKey: "round-trip")
+    reversedScene.addChild(sprite)
+}
+let reversedArchive = try tilePlist(reversedScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: reversedArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("reversed-actions." + suffix))
+}
+
+let reversedScaleScene = SKScene(size: CGSize(width: 100, height: 100))
+let relativeScale = SKAction.scaleX(by: 2, y: 4, duration: 2)
+for action in [
+    SKAction.sequence([relativeScale.reversed(), relativeScale]),
+    SKAction.sequence([.moveBy(x: 10, y: 0, duration: 2), relativeScale]).reversed(),
+    SKAction.group([.moveBy(x: 10, y: 0, duration: 2), relativeScale]).reversed()
+] {
+    let node = SKNode()
+    node.xScale = 2
+    node.yScale = 4
+    node.run(action, withKey: "reversed-scale")
+    reversedScaleScene.addChild(node)
+}
+let reversedScaleArchive = try tilePlist(reversedScaleScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: reversedScaleArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("reversed-scale-actions." + suffix))
+}

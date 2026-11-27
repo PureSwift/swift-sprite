@@ -1,0 +1,29 @@
+name: Viewer smoke tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  viewer:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install rendering and physics libraries
+        run: brew install sdl3 box2d pkgconf
+      - name: Build viewer
+        run: swift build --product sprite-viewer
+      - name: Run Swift test suite
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+        run: swift test
+      - name: Exercise archive loading and rendering headlessly
+        run: python3 Scripts/smoke-viewer.py "$(swift build --show-bin-path)/sprite-viewer"

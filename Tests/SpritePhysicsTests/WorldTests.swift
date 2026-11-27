@@ -4,6 +4,7 @@
 //
 
 import Testing
+import CBox2D
 import SpriteCore
 @testable import SpritePhysics
 
@@ -251,6 +252,98 @@ func run(_ world: PhysicsWorld, seconds: Double) {
         world.step(1.0 / 60.0)
         // Forces are cleared after each step.
         #expect(approx(pushed.velocity.x, 1))
+    }
+
+    @Test func continuousCollisionSettingSurvivesWorldChanges() throws {
+        let world = PhysicsWorld()
+        let body = PhysicsBody(circleOfRadius: 1)
+        #expect(!body.usesContinuousCollisionDetection)
+        body.usesContinuousCollisionDetection = true
+        world.add(body)
+        #expect(b2Body_IsBullet(try #require(body.bodyID)))
+        body.usesContinuousCollisionDetection = false
+        #expect(!b2Body_IsBullet(try #require(body.bodyID)))
+        body.usesContinuousCollisionDetection = true
+        #expect(b2Body_IsBullet(try #require(body.bodyID)))
+        world.remove(body)
+        body.usesContinuousCollisionDetection = true
+        world.add(body)
+        #expect(b2Body_IsBullet(try #require(body.bodyID)))
+        body.usesContinuousCollisionDetection = false
+        world.remove(body)
+        world.add(body)
+        #expect(!b2Body_IsBullet(try #require(body.bodyID)))
+    }
+
+    @Test func continuousCollisionStopsFastBodyAtDynamicObstacle() {
+        func position(continuous: Bool) -> Float {
+            let world = PhysicsWorld()
+            world.gravity = .zero
+            let obstacle = PhysicsBody(rectangleOf: [1, 100])
+            obstacle.mass = 100_000
+            obstacle.linearDamping = 0
+            obstacle.restitution = 0
+            obstacle.allowsRotation = false
+            world.add(obstacle)
+            let ball = PhysicsBody(circleOfRadius: 1)
+            ball.position = [-40, 0]
+            ball.velocity = [6000, 0]
+            ball.linearDamping = 0
+            ball.restitution = 0
+            ball.usesContinuousCollisionDetection = continuous
+            world.add(ball)
+            world.step(1.0 / 60)
+            return ball.position.x
+        }
+        #expect(position(continuous: false) > 10)
+        #expect(position(continuous: true) < 0)
+    }
+
+    @Test func pinnedOffsetBodyRotatesAroundOrigin() throws {
+        let world = PhysicsWorld()
+        let body = PhysicsBody(shape: .circle(radius: 5, center: [30, 0]), position: [10, 100])
+        body.isPinned = true
+        body.angularDamping = 0
+        world.add(body)
+        #expect(b2Body_GetJointCount(try #require(body.bodyID)) == 1)
+        run(world, seconds: 0.5)
+        #expect(approx(body.position, [10, 100], tolerance: 0.1))
+        #expect(body.rotation < -0.1)
+        #expect(body.worldCenter.y < 100)
+        body.position = [100, 200]
+        run(world, seconds: 0.5)
+        #expect(approx(body.position, [100, 200], tolerance: 0.1))
+        body.allowsRotation = false
+        let angle = body.rotation
+        run(world, seconds: 0.2)
+        #expect(approx(body.rotation, angle, tolerance: 0.001))
+        body.isPinned = false
+        #expect(b2Body_GetJointCount(try #require(body.bodyID)) == 0)
+        run(world, seconds: 0.5)
+        #expect(body.position.y < 150)
+    }
+
+    @Test func pinnedBodyLifecycle() throws {
+        let world = PhysicsWorld()
+        let body = PhysicsBody(circleOfRadius: 5)
+        world.add(body)
+        body.isPinned = true
+        #expect(b2Body_GetJointCount(try #require(body.bodyID)) == 1)
+        body.isPinned = true
+        #expect(b2Body_GetJointCount(try #require(body.bodyID)) == 1)
+        body.isDynamic = false
+        #expect(b2Body_GetJointCount(try #require(body.bodyID)) == 0)
+        body.isDynamic = true
+        #expect(b2Body_GetJointCount(try #require(body.bodyID)) == 1)
+        world.remove(body)
+        #expect(body.bodyID == nil)
+        body.position = [50, 100]
+        let other = PhysicsWorld()
+        other.add(body)
+        #expect(b2Body_GetJointCount(try #require(body.bodyID)) == 1)
+        run(other, seconds: 0.5)
+        #expect(approx(body.position, [50, 100], tolerance: 0.01))
+        #expect(other.bodies.count == 1 && other.joints.isEmpty)
     }
 
     @Test func removingBodiesClearsWorld() {

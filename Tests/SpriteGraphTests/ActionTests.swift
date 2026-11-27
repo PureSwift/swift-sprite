@@ -9,6 +9,77 @@ import SpriteCore
 
 @MainActor @Suite struct ActionTests {
 
+    @Test func sizeBasedScaleHandlesZeroDimensionsAndPlainNodes() {
+        let scene = Scene(size: [200, 100])
+        let sprite = Sprite(color: .white, size: [0, 20])
+        sprite.scale = [3, 2]
+        let node = Node()
+        node.scale = [4, 5]
+        scene.addChild(sprite)
+        scene.addChild(node)
+        let action = Action.scale(toSize: [40, 80], duration: .seconds(2))
+        sprite.run(action)
+        node.run(action)
+        scene.advance(by: .seconds(1))
+        #expect(sprite.scale == [3, 3])
+        #expect(node.scale == [4, 5])
+        scene.advance(by: .seconds(1))
+        #expect(sprite.scale == [3, 4])
+        #expect(sprite.size == [0, 20])
+        #expect(!sprite.hasActions && !node.hasActions)
+    }
+
+    @Test func speedChangesAffectDescendantsOnFollowingFrames() {
+        let scene = Scene(size: [100, 100])
+        let parent = Node()
+        let child = Node()
+        scene.addChild(parent)
+        parent.addChild(child)
+        parent.run(.changeSpeed(to: 2, duration: .zero))
+        child.run(.move(by: [10, 0], duration: .seconds(1)))
+        scene.advance(by: .milliseconds(250))
+        #expect(parent.speed == 2 && child.position.x == 2.5)
+        scene.advance(by: .milliseconds(250))
+        #expect(child.position.x == 7.5)
+        parent.isPaused = true
+        scene.advance(by: .seconds(1))
+        #expect(child.position.x == 7.5)
+        parent.isPaused = false
+        scene.advance(by: .milliseconds(125))
+        #expect(child.position.x == 10 && !child.hasActions)
+    }
+
+    @Test func relativeSpeedCapturesValueWhenSequenceReachesIt() {
+        let scene = Scene(size: [100, 100])
+        let node = Node()
+        scene.addChild(node)
+        node.run(.sequence([
+            .changeSpeed(to: 3, duration: .zero),
+            .changeSpeed(by: 2, duration: .zero)
+        ]))
+        scene.advance(by: .milliseconds(1))
+        #expect(node.speed == 6 && !node.hasActions)
+    }
+
+    @Test func relativeResizeComposesAndIgnoresPlainNodes() {
+        let scene = Scene(size: [200, 100])
+        let sprite = Sprite(color: .white, size: [20, 30])
+        let node = Node()
+        scene.addChild(sprite)
+        scene.addChild(node)
+        let action = Action.group([
+            .resize(by: [10, -10], duration: .seconds(2)),
+            .resize(by: [20, 10], duration: .seconds(2))
+        ])
+        sprite.run(action)
+        node.run(action)
+        scene.advance(by: .seconds(1))
+        #expect(sprite.size == [35, 30])
+        scene.advance(by: .seconds(1))
+        #expect(sprite.size == [50, 30])
+        #expect(!sprite.hasActions && !node.hasActions)
+    }
+
     @Test(arguments: 0..<6)
     func cancellingNestedTextureAnimationRestoresOriginal(wrapper: Int) {
         let original = Texture(id: TextureID(rawValue: 1), textureSize: [12, 8])

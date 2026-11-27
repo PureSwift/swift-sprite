@@ -34,8 +34,10 @@ struct ArchivePhysicsBody: Sendable {
     let velocity: Vector2
     let angularVelocity: Float
     let dynamic: Bool
+    let pinned: Bool
     let affectedByGravity: Bool
     let allowsRotation: Bool
+    let usesContinuousCollisionDetection: Bool
     let category: UInt32
     let collision: UInt32
     let contact: UInt32
@@ -45,11 +47,7 @@ struct ArchivePhysicsBody: Sendable {
         guard try graph.className(fields) == "PKPhysicsBody" else {
             throw SceneArchiveError.unsupported("Physics body class")
         }
-        for key in ["pinned", "needsContinuousCollsionDetection"] {
-            guard try !graph.boolean(fields[key], default: false) else {
-                throw SceneArchiveError.unsupported("Physics body \(key)")
-            }
-        }
+        pinned = try graph.boolean(fields["pinned"], default: false)
         guard try graph.number(fields["charge"], default: 0) == 0 else {
             throw SceneArchiveError.unsupported("Charged physics body")
         }
@@ -66,6 +64,22 @@ struct ArchivePhysicsBody: Sendable {
             shape = .rectangle(size: size, center: try graph.vector(fields["_p0"], default: .zero))
         case 3:
             shape = .polygon(try Self.polygon(fields["_path"], graph: graph))
+        case 4:
+            guard try !graph.isNull(fields["_p0"]), try !graph.isNull(fields["_p1"]) else {
+                throw SceneArchiveError.invalid("Missing physics edge endpoint")
+            }
+            let start = try graph.vector(fields["_p0"], default: .zero)
+            let end = try graph.vector(fields["_p1"], default: .zero)
+            try Self.validateEdges([start, end], closed: false)
+            shape = .edge(from: start, to: end)
+        case 5, 6:
+            let closed = try graph.number(fields["_shapeType"], default: -1) == 6
+            var points = try Self.path(fields["_path"], graph: graph)
+            if closed, points.first == points.last { points.removeLast() }
+            try Self.validateEdges(points, closed: closed)
+            shape = closed ? .edgeLoop(points) : .edgeChain(points)
+        case 7:
+            shape = try Self.compound(fields, graph: graph)
         default: throw SceneArchiveError.unsupported("Physics shape type")
         }
         let center = try graph.vector(fields["_p0"], default: .zero)
@@ -86,6 +100,8 @@ struct ArchivePhysicsBody: Sendable {
         dynamic = try graph.boolean(fields["dynamic"], default: true)
         affectedByGravity = try graph.boolean(fields["affectedByGravity"], default: true)
         allowsRotation = try graph.boolean(fields["allowRotation"], default: true)
+        // The misspelling is part of SpriteKit's native archive key.
+        usesContinuousCollisionDetection = try graph.boolean(fields["needsContinuousCollsionDetection"], default: false)
         category = try Self.mask(fields["categoryBitMask"], default: .max, graph: graph)
         collision = try Self.mask(fields["collisionBitMask"], default: .max, graph: graph)
         contact = try Self.mask(fields["intersectionTestBitMask"], default: 0, graph: graph)
@@ -100,9 +116,12 @@ struct ArchivePhysicsBody: Sendable {
         body.angularDamping = angularDamping
         body.velocity = velocity
         body.angularVelocity = angularVelocity
-        body.isDynamic = dynamic
+        // SpriteKit ignores the archived dynamic flag for bodies without volume.
+        body.isDynamic = dynamic && body.area > 0
+        body.isPinned = pinned
         body.affectedByGravity = affectedByGravity
         body.allowsRotation = allowsRotation
+        body.usesContinuousCollisionDetection = usesContinuousCollisionDetection
         body.categoryBitMask = PhysicsCategory(rawValue: category)
         body.collisionBitMask = PhysicsCategory(rawValue: collision)
         body.contactTestBitMask = PhysicsCategory(rawValue: contact)
@@ -120,9 +139,71 @@ struct ArchivePhysicsBody: Sendable {
         return number < 0 ? UInt32(bitPattern: Int32(number)) : UInt32(number)
     }
 
-    private static func polygon(_ value: PropertyValue?, graph: KeyedArchive) throws -> [Vector2] {
+    private static func compound(_ fields: [String: PropertyValue], graph: KeyedArchive) throws -> PhysicsShape {
+        guard case let .number(count) = try graph.resolve(fields["_compoundBodyCount"]),
+              count.rounded() == count, (1...256).contains(count) else {
+            throw SceneArchiveError.invalid("Invalid compound physics shape count")
+        }
+        var cursor = 0
+        var vertexBudget = 4096
+        func next() throws -> PropertyValue {
+            let key = "$\(cursor)"
+            cursor += 1
+            guard let value = fields[key], try !graph.isNull(value) else {
+                throw SceneArchiveError.invalid("Missing compound physics shape field")
+            }
+            return value
+        }
+        var shapes: [PhysicsShape] = []
+        for _ in 0..<Int(count) {
+            switch try graph.string(next()) {
+            case "circle":
+                let radius = try graph.vector(next(), default: .zero)
+                let center = try graph.vector(next(), default: .zero)
+                guard radius.x > 0, radius.x <= 1_000_000, radius.y == 0,
+                      abs(center.x) <= 1_000_000, abs(center.y) <= 1_000_000 else {
+                    throw SceneArchiveError.invalid("Invalid compound physics circle")
+                }
+                shapes.append(.circle(radius: radius.x, center: center))
+            case "polygon":
+                // Compound polygon paths use meters; compound circles retain point units.
+                let points = try polygon(next(), graph: graph, scale: archivePointsPerMeter,
+                    maximumElements: min(1025, vertexBudget + 1))
+                guard points.count <= vertexBudget else {
+                    throw SceneArchiveError.invalid("Compound physics vertex limit")
+                }
+                vertexBudget -= points.count
+                shapes.append(.polygon(points))
+            default:
+                throw SceneArchiveError.unsupported("Compound physics shape kind")
+            }
+        }
+        guard !fields.keys.contains(where: { key in
+            key.first == "$" && Int(key.dropFirst()).map { $0 < 0 || $0 >= cursor } == true
+        }) else {
+            throw SceneArchiveError.invalid("Unexpected compound physics shape field")
+        }
+        return .compound(shapes)
+    }
+
+    private static func validateEdges(_ points: [Vector2], closed: Bool) throws {
+        guard points.count >= (closed ? 3 : 2),
+              points.allSatisfy({ abs($0.x) <= 1_000_000 && abs($0.y) <= 1_000_000 }) else {
+            throw SceneArchiveError.invalid("Invalid physics edge path")
+        }
+        let ends = closed ? Array(points.dropFirst()) + [points[0]] : Array(points.dropFirst())
+        for (start, end) in zip(points, ends) {
+            let delta = end - start
+            guard delta.x * delta.x + delta.y * delta.y > Float.ulpOfOne * Float.ulpOfOne else {
+                throw SceneArchiveError.invalid("Degenerate physics edge")
+            }
+        }
+    }
+
+    private static func path(_ value: PropertyValue?, graph: KeyedArchive, scale: Float = 1,
+        maximumElements: Int = 1025) throws -> [Vector2] {
         let elements = try graph.array(value)
-        guard (3...1025).contains(elements.count) else { throw SceneArchiveError.invalid("Invalid physics polygon") }
+        guard elements.count >= 2, elements.count <= maximumElements else { throw SceneArchiveError.invalid("Invalid physics path") }
         var points: [Vector2] = []
         for (index, element) in elements.enumerated() {
             let fields = try graph.dictionary(element)
@@ -147,8 +228,14 @@ struct ArchivePhysicsBody: Sendable {
             guard vertices.count == 1, try !graph.isNull(vertices[0]) else {
                 throw SceneArchiveError.invalid("Invalid physics path point")
             }
-            points.append(try graph.vector(vertices[0], default: .zero))
+            points.append(try graph.vector(vertices[0], default: .zero) * scale)
         }
+        return points
+    }
+
+    private static func polygon(_ value: PropertyValue?, graph: KeyedArchive, scale: Float = 1,
+        maximumElements: Int = 1025) throws -> [Vector2] {
+        var points = try path(value, graph: graph, scale: scale, maximumElements: maximumElements)
         if points.last == points.first { points.removeLast() }
         guard points.count >= 3, points.allSatisfy({ abs($0.x) <= 1_000_000 && abs($0.y) <= 1_000_000 }) else {
             throw SceneArchiveError.invalid("Invalid physics polygon")
