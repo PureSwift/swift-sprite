@@ -77,6 +77,11 @@ extension Action {
                 guard node is Sprite else { return }
                 node.scale = values.0 + (values.1 - values.0) * t
             }
+        case let .changeSpeed(value, relative):
+            return interpolating(from: { $0.speed }) { node, start, t in
+                let target = relative ? start * value : value
+                node.speed = start + (target - start) * t
+            }
         case let .fade(by: delta):
             return incremental { node, step in node.alpha += delta * step }
         case let .fadeTo(target):
