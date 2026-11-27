@@ -219,14 +219,14 @@ fixtures cover binary/XML decoding and simulation without requiring SpriteKit at
 
 Archived actions support relative/absolute movement (including single-axis movement),
 color-and-blend or blend-only colorization,
-Z rotation, two-axis scaling, single-axis absolute scaling, fading, waits, hide/unhide, removal, sequences, groups,
+Z rotation, two-axis scaling, single-axis absolute scaling, absolute/relative sprite resizing (including independent width/height targets), fading, waits, hide/unhide, removal, sequences, groups,
 finite repeats, repeat-forever, `SKAnimate` texture flipbooks, and `SKPlaySound` callbacks. The ordered action list and keys are restored without
 duplicating keyed actions. Each `makeNode()` creates independent playback state, and
 standard timing modes use the engine's easing curves.
 
 Actions start from their archived descriptions. Reversed actions, detectable partially
-executed state, retimed composites/flipbooks, single-axis relative scaling, size-based scaling, resize
-animations, paths, archived executable callbacks, and custom classes are unsupported. Native fixtures
+executed state, retimed composites/flipbooks, single-axis relative scaling, size-based scaling,
+paths, archived executable callbacks, and custom classes are unsupported. Native fixtures
 do not encode action speed; omitted runtime state cannot be recovered. Node speed and
 pause settings still apply. This is not a snapshot/resume mechanism for running games.
 
@@ -381,7 +381,7 @@ sound once and preserves archived action waits without loading audio files. With
 `--mute`, sound actions still fail with a missing-sound error.
 
 The script uses SDL's dummy video driver and software renderer, requires clean exits
-and completed frames for successful loads, and treats timeouts as failures. Its 25
+and completed frames for successful loads, and treats timeouts as failures. Its 26
 checks cover custom classes, references, muted sound actions, source/compiled atlases, physics fixtures,
 and invalid options or resources. Temporary derived archives stay outside the repository.
 The `Viewer smoke tests` workflow builds the viewer, runs the full Swift test suite,
