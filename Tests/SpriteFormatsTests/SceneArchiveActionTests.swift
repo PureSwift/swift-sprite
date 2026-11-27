@@ -6,6 +6,53 @@ import SpriteGraph
 
 @Suite struct SceneArchiveActionTests {
     @MainActor @Test(arguments: ["sks", "xml"])
+    func loadsNamedActionLibraries(format: String) async throws {
+        let library = try await SpriteKitActionArchive.decode(at: Fixtures.url("SceneArchives/action-library." + format))
+        #expect(library.actionNames == ["Flipbook", "Move"])
+        #expect(try library.makeAction(named: "missing") == nil)
+        #expect(throws: SceneArchiveError.self) { try library.makeAction(named: "Flipbook") }
+        var requests = 0
+        let animation = try #require(try library.makeAction(named: "Flipbook", textureResolver: { _ in
+            requests += 1
+            return Texture(id: TextureID(rawValue: 7), textureSize: [80, 40])
+        }))
+        #expect(requests == 1)
+        let sprite = Sprite(texture: nil)
+        let scene = Scene(size: [100, 100])
+        scene.addChild(sprite)
+        sprite.run(animation)
+        scene.advance(by: .milliseconds(125))
+        #expect(sprite.texture?.size == [40, 40])
+        scene.advance(by: .milliseconds(250))
+        #expect(sprite.texture?.size == [80, 40])
+        let move = try #require(try library.makeAction(named: "Move"))
+        let a = Node(), b = Node()
+        scene.addChild(a)
+        scene.addChild(b)
+        a.run(move)
+        scene.advance(by: .milliseconds(500))
+        b.run(move)
+        scene.advance(by: .milliseconds(250))
+        #expect(a.position == [15, 7.5] && b.position == [5, 2.5])
+    }
+
+    @Test func rejectsInvalidActionLibraries() throws {
+        func data(keys: [String], values: [Any]) throws -> Data {
+            try PropertyListSerialization.data(fromPropertyList: [
+                "$archiver": "NSKeyedArchiver", "$version": 100_000,
+                "$top": ["root": ["CF$UID": 1]],
+                "$objects": ["$null",
+                    ["$class": ["CF$UID": 2], "NS.keys": keys, "NS.objects": values],
+                    ["$classname": "NSDictionary"]]
+            ], format: .xml, options: 0)
+        }
+        for (keys, values): ([String], [Any]) in [([], []), (["actions"], []),
+            (["actions", "actions"], [0, 0]), ([""], [0]), (["actions"], [42])] {
+            #expect(throws: SceneArchiveError.self) { try SpriteKitActionArchive.decode(data(keys: keys, values: values)) }
+        }
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
     func restoresTextureAnimations(format: String) throws {
         let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/texture-actions." + format)))
         #expect(throws: SceneArchiveError.self) { try archive.makeNode() }
