@@ -280,6 +280,15 @@ public extension Action {
         return Action(.wait, seconds: duration.seconds + jitter)
     }
 
+    /// Starts an independent action on the first direct child with this exact name.
+    /// The child is looked up at playback time. A missing child is a no-op.
+    /// This action completes immediately without waiting for the child's action.
+    static func run(_ action: Action, onChildWithName name: String) -> Action {
+        .run { node in
+            node.children.first { $0.name == name }?.run(action)
+        }
+    }
+
     static func run(_ block: @escaping Block) -> Action {
         Action(.run(block), seconds: 0)
     }
