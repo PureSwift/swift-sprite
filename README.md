@@ -181,7 +181,7 @@ Compound bodies support archived circles and convex polygon components, includin
 local offsets; polygon components are converted from meters to points. Loading is limited
 to 256 components and 4,096 polygon vertices per compound body.
 
-Edges, unsupported texture-derived geometry, curved or nonconvex paths, joints, pinned bodies,
+Edge segments, chains, and loops load as static, two-sided collision boundaries, even\nwhen the archive's dynamic flag is set. Edge paths support up to 1,025 straight-line\npoints and may be concave; zero-length segments are rejected. Loops connect the final\npoint to the first, while chains preserve their archived endpoints.\n\nUnsupported texture-derived geometry, curved paths, nonconvex volume polygons, joints, pinned bodies,
 precise collision detection, charged bodies, and physics bodies under scaled nodes are
 currently rejected. Field masks and internal collision skin radii are not imported;
 field nodes are unsupported and the engine uses its own collision geometry. Physics
