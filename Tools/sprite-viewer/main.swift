@@ -343,7 +343,36 @@ func customNodeClasses(arguments: [String]) throws -> [String: SpriteKitSceneArc
     return mappings
 }
 
-let nodeClassMappings = try customNodeClasses(arguments: Array(CommandLine.arguments.dropFirst()))
+struct ViewerAtlasKey: Hashable {
+    let name: String
+    let filtering: TextureFiltering
+}
+
+let arguments = Array(CommandLine.arguments.dropFirst())
+let nodeClassMappings = try customNodeClasses(arguments: arguments)
+var atlasDirectories: [String: URL] = [:]
+for index in arguments.indices where arguments[index] == "--atlas" {
+    guard arguments.contains("--sks"), !arguments.contains("--tmx"),
+          arguments.indices.contains(index + 1), !arguments[index + 1].hasPrefix("--") else {
+        throw SceneArchiveError.invalid("--atlas requires --sks and a .atlas or .atlasc directory")
+    }
+    let directory = URL(fileURLWithPath: arguments[index + 1])
+    let name = directory.deletingPathExtension().lastPathComponent
+    guard ["atlas", "atlasc"].contains(directory.pathExtension), !name.isEmpty else {
+        throw SceneArchiveError.invalid("--atlas expects a .atlas or .atlasc directory")
+    }
+    guard atlasDirectories[name] == nil else {
+        throw SceneArchiveError.invalid("Duplicate atlas name: " + name)
+    }
+    atlasDirectories[name] = directory
+}
+var decodedAtlases: [String: DecodedAtlas] = [:]
+for name in atlasDirectories.keys.sorted() {
+    if let directory = atlasDirectories[name] {
+        decodedAtlases[name] = try await SpriteKitAtlas.decode(at: directory)
+    }
+}
+var uploadedAtlases: [ViewerAtlasKey: [TextureAtlas]] = [:]
 let window = try SpriteSDL.SDLWindow(title: "sprite-viewer", width: 960, height: 640)
 let backend = SDLRenderBackend(window: window)
 
@@ -393,8 +422,25 @@ if let option = CommandLine.arguments.firstIndex(of: "--tmx") {
     // Preview uses the built-in bitmap font; applications can supply their own font mapping.
     let font = try BitmapFont.debug(backend: backend)
     let root = try archive.makeNode(textureResolver: { reference in
-        guard reference.atlasName == nil, reference.subtextureName == nil else {
-            throw SceneArchiveError.unsupported("Viewer requires loose PNG textures")
+        if let atlasName = reference.atlasName {
+            let atlasURL = URL(fileURLWithPath: atlasName)
+            let name = ["atlas", "atlasc"].contains(atlasURL.pathExtension)
+                ? atlasURL.deletingPathExtension().lastPathComponent : atlasURL.lastPathComponent
+            guard let decoded = decodedAtlases[name] else {
+                throw SceneArchiveError.missingTexture("Atlas " + atlasName + " (supply --atlas)")
+            }
+            let key = ViewerAtlasKey(name: name, filtering: reference.filtering)
+            if uploadedAtlases[key] == nil {
+                uploadedAtlases[key] = try decoded.makeTextureAtlases(backend: backend, filtering: reference.filtering)
+            }
+            let textureName = SpriteKitAtlas.textureName(reference.subtextureName ?? reference.imageName)
+            guard let texture = uploadedAtlases[key]?[texture: textureName] else {
+                throw SceneArchiveError.missingTexture(atlasName + "/" + textureName)
+            }
+            return texture
+        }
+        guard reference.subtextureName == nil else {
+            throw SceneArchiveError.unsupported("Atlas subtexture without an atlas name")
         }
         var imageURL = URL(fileURLWithPath: reference.imageName, relativeTo: url.deletingLastPathComponent())
         if imageURL.pathExtension.isEmpty { imageURL.appendPathExtension("png") }
