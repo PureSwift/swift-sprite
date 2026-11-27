@@ -313,7 +313,7 @@ struct ArchiveActionDecoder {
                 throw SceneArchiveError.unsupported("Retimed, keyed, or non-child run action")
             }
             guard let childName = try graph.string(fields["_subSpriteKey"]), !childName.isEmpty,
-                  !childName.contains(where: { ".*[]".contains($0) }) else {
+                  !childName.contains(where: { "*[]".contains($0) }) else {
                 throw SceneArchiveError.unsupported("Child action requires a literal path")
             }
             let path = childName.hasPrefix("/") ? String(childName.dropFirst()) : childName
