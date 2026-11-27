@@ -319,3 +319,19 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: animationArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("texture-actions." + suffix))
 }
+
+let screenScene = SKScene(size: CGSize(width: 100, height: 100))
+let screenSprite = SKSpriteNode(texture: tileTexture)
+screenSprite.blendMode = .screen
+screenScene.addChild(screenSprite)
+let screenEmitter = SKEmitterNode()
+screenEmitter.particleBirthRate = 1
+screenEmitter.particleLifetime = 10
+screenEmitter.particleSize = CGSize(width: 8, height: 8)
+screenEmitter.particleBlendMode = .screen
+screenScene.addChild(screenEmitter)
+let screenArchive = try tilePlist(screenScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: screenArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("screen-blend." + suffix))
+}
