@@ -135,7 +135,7 @@ let root = try archive.makeNode(
 ```
 
 Foundation's `PropertyListSerialization` reads binary and XML keyed archives.
-The loader maps `SKScene`, `SKNode`, `SKSpriteNode`, `SKCameraNode`, `SKLabelNode`, and `SKEmitterNode`
+The loader maps `SKScene`, `SKNode`, `SKSpriteNode`, `SKCameraNode`, `SKLabelNode`, `SKEmitterNode`, and `SKTileMapNode`
 to engine nodes, preserving child order, transforms, opacity, visibility, scene settings,
 camera identity, sprite geometry/tint, and label layout. A root `Scene` can be presented
 directly; other root nodes can be attached to an existing scene.
@@ -189,6 +189,29 @@ currently unsupported. Imported emitters start with no live particles and retain
 engine's 10,000-live-particle cap; simulation is not intended to reproduce SpriteKit's
 random particle stream exactly.
 
+Grid tile maps restore dimensions, cell size, anchor, tint, transforms, and saved cell
+placement. Empty cells, shared tile definitions, and definitions selected from multiple
+rules are preserved. Embedded tile sets are decoded directly. For editor scenes that
+reference a set by name, decode the companion archive and provide a resolver:
+
+```swift
+let sets = try await SpriteKitTileSetArchive.decode(at: tileSetsURL)
+let root = try archive.makeNode(
+    textureResolver: { reference in textures[reference.imageName] },
+    tileSetResolver: { name in sets.first { $0.name == name } }
+)
+```
+
+Tile definitions must have one static texture, no orientation flags or normal maps,
+and the same size as their map cells. Non-grid layouts are unsupported. The importer
+uses the archived definition selection; it does not implement SpriteKit automatic
+adjacency updates, weighted selection, or editor stamps. Tile-set metadata and custom
+properties are not imported. The viewer accepts an explicit companion archive:
+
+```sh
+swift run sprite-viewer --sks Tests/SpriteFormatsTests/Fixtures/SceneArchives/tiles-external.sks --tilesets Tests/SpriteFormatsTests/Fixtures/SceneArchives/tilesets.sks
+```
+
 Other editor metadata is ignored. Binary UIDs are normalized through Foundation's XML
 serialization without using private UID APIs or instantiating archived classes.
 
@@ -199,6 +222,28 @@ swift run sprite-viewer --sks Tests/SpriteFormatsTests/Fixtures/SceneArchives/sc
 The viewer loads loose PNGs relative to the archive and substitutes its built-in bitmap font.
 The fixture generator is `Tests/SpriteFormatsTests/Fixtures/make_scene_fixtures.swift`
 (macOS only); tests consume the checked-in archives and require no SpriteKit runtime.
+
+### Tutorial compatibility assets
+
+Download and extract **2D Apple Games by Tutorials, edition 3.0** from
+[Kodeco's deprecated books](https://github.com/kodecocodes/deprecated-books):
+
+```sh
+python3 Scripts/download-tutorial.py
+```
+
+The script requires Python 3.8 or later. It caches the approximately 632 MiB ZIP in
+`.build/tutorials/` and extracts it into `.build/tutorials/2d-apple-games-3/`.
+It verifies a pinned SHA-256 checksum and checks key tile-map and particle archives.
+Use `--archive PATH` to select the ZIP cache or `--destination PATH` to change the
+extraction directory. Repeated runs reuse verified downloads and extracted samples.
+The downloaded material remains outside version control and retains
+[Kodeco's license](https://github.com/kodecocodes/deprecated-books/blob/master/LICENSE).
+
+The **Tutorial assets** GitHub Actions workflow runs the script on pushes, pull
+requests, and manual dispatches, including cache hits. This checks asset retrieval
+and archive integrity; it does not claim that every tutorial scene is supported by
+the engine.
 
 ### Batch renderer
 
