@@ -29,6 +29,38 @@ import SpriteCore
         #expect(!sprite.hasActions && !node.hasActions)
     }
 
+    @Test func speedChangesAffectDescendantsOnFollowingFrames() {
+        let scene = Scene(size: [100, 100])
+        let parent = Node()
+        let child = Node()
+        scene.addChild(parent)
+        parent.addChild(child)
+        parent.run(.changeSpeed(to: 2, duration: .zero))
+        child.run(.move(by: [10, 0], duration: .seconds(1)))
+        scene.advance(by: .milliseconds(250))
+        #expect(parent.speed == 2 && child.position.x == 2.5)
+        scene.advance(by: .milliseconds(250))
+        #expect(child.position.x == 7.5)
+        parent.isPaused = true
+        scene.advance(by: .seconds(1))
+        #expect(child.position.x == 7.5)
+        parent.isPaused = false
+        scene.advance(by: .milliseconds(125))
+        #expect(child.position.x == 10 && !child.hasActions)
+    }
+
+    @Test func relativeSpeedCapturesValueWhenSequenceReachesIt() {
+        let scene = Scene(size: [100, 100])
+        let node = Node()
+        scene.addChild(node)
+        node.run(.sequence([
+            .changeSpeed(to: 3, duration: .zero),
+            .changeSpeed(by: 2, duration: .zero)
+        ]))
+        scene.advance(by: .milliseconds(1))
+        #expect(node.speed == 6 && !node.hasActions)
+    }
+
     @Test func relativeResizeComposesAndIgnoresPlainNodes() {
         let scene = Scene(size: [200, 100])
         let sprite = Sprite(color: .white, size: [20, 30])
