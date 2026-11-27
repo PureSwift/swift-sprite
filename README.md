@@ -293,3 +293,13 @@ try backend.render(batcher.makeFrame(viewTransform: .viewport(size: backend.draw
 swift run sprite-viewer
 swift test
 ```
+
+### Screen blending
+
+`BlendMode.screen` is supported for sprites and particles, including archived
+SpriteKit screen blend modes. The SDL backend uses a custom blend mode with
+premultiplied textures and vertex colors to preserve source transparency. It retains
+CPU texture pixels and lazily caches a premultiplied GPU copy when a texture is first
+used for screen blending; texture updates invalidate that copy. Renderers without
+support for the custom blend factors throw an SDL error. The Metal path has been
+checked locally; the software backend is not guaranteed to support this mode.
