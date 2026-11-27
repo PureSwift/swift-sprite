@@ -6,6 +6,46 @@ import SpriteGraph
 
 @Suite struct SceneArchiveEmitterTests {
     @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresColorKeyframes(format: String) throws {
+        let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/emitter-colors." + format)))
+        let emitter = try #require(archive.makeNode() as? ParticleEmitter)
+        let sequence = try #require(emitter.particleColorSequence)
+        #expect(sequence.value(at: -1) == .red)
+        #expect(sequence.value(at: 2) == Color(white: 0.5, alpha: 0.5))
+        let middle = Color(red: 0.75, green: 0.25, blue: 0.25, alpha: 0.75)
+        #expect(sequence.value(at: 0.5) == middle)
+        let scene = Scene(size: [100, 100])
+        scene.addChild(emitter)
+        scene.advance(by: .seconds(1))
+        #expect(scene.makeFrame(viewportSize: [100, 100]).vertices.first?.color == .red)
+        scene.advance(by: .seconds(1))
+        #expect(scene.makeFrame(viewportSize: [100, 100]).vertices.first?.color == middle)
+    }
+
+    @Test func rejectsMalformedColors() throws {
+        let graph = try KeyedArchive(ArchivePropertyList.decode(Data(contentsOf: Fixtures.url("SceneArchives/emitter-colors.sks"))))
+        let index = try #require(graph.objects.firstIndex { $0.dictionary?["NSRGB"] != nil })
+        for changes: [String: PropertyValue] in [
+            ["NSRGB": .data(Data("nan 0 0".utf8))],
+            ["NSRGB": .data(Data("1 0".utf8))],
+            ["NSRGB": .data(Data("1 0 0 2".utf8))],
+            ["NSRGB": .data(Data("1 bad 0".utf8))],
+            ["NSRGB": .data(Data([0xff]))],
+            ["NSRGB": .string("1 0 0")],
+            ["NSColorSpace": .number(6)]
+        ] {
+            var objects = graph.objects
+            let fields = try graph.dictionary(.uid(index))
+            objects[index] = .dictionary(fields.merging(changes) { _, new in new })
+            let modified = try KeyedArchive(.dictionary(["$archiver": .string("NSKeyedArchiver"),
+                "$version": .number(100_000), "$top": .dictionary(["root": .uid(graph.rootID)]), "$objects": .array(objects)]))
+            #expect(throws: SceneArchiveError.self) {
+                try ArchiveEmitter(modified.dictionary(.uid(modified.rootID)), graph: modified)
+            }
+        }
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
     func restoresAndSimulatesNativeEmitters(format: String) throws {
         let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: Fixtures.url("SceneArchives/emitters." + format)))
         var requests = 0
