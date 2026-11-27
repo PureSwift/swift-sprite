@@ -52,7 +52,7 @@ def main():
               ['--class', 'FixtureGameScene=SKNode'], 'Duplicate --class')
         check('invalid frame count', ['--frames', '0'], '--frames requires')
         check('duplicate frame option', ['--frames', '3', '--frames', '4'], '--frames requires')
-        for name in ['compound-physics', 'edge-physics', 'pinned-physics', 'color-actions', 'axis-scale-actions', 'resize-actions']:
+        for name in ['compound-physics', 'edge-physics', 'pinned-physics', 'color-actions', 'axis-scale-actions', 'resize-actions', 'size-scale-actions']:
             check(name, scene_options(archives / (name + '.sks')))
 
         scene = root / 'scene.sks'
