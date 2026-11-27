@@ -63,6 +63,20 @@ extension Action {
                 if let x { node.scale.x = start.x + (x - start.x) * t }
                 if let y { node.scale.y = start.y + (y - start.y) * t }
             }
+        case let .scaleToSize(size):
+            return interpolating(from: { node -> (Vector2, Vector2) in
+                let start = node.scale
+                guard let sprite = node as? Sprite else { return (start, start) }
+                var target = start
+                for axis in 0..<2 where sprite.size[axis] != 0 {
+                    let value = size[axis] / sprite.size[axis]
+                    if value.isFinite { target[axis] = value }
+                }
+                return (start, target)
+            }) { node, values, t in
+                guard node is Sprite else { return }
+                node.scale = values.0 + (values.1 - values.0) * t
+            }
         case let .fade(by: delta):
             return incremental { node, step in node.alpha += delta * step }
         case let .fadeTo(target):
