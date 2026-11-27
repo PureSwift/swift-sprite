@@ -9,6 +9,26 @@ import SpriteCore
 
 @MainActor @Suite struct ActionTests {
 
+    @Test func sizeBasedScaleHandlesZeroDimensionsAndPlainNodes() {
+        let scene = Scene(size: [200, 100])
+        let sprite = Sprite(color: .white, size: [0, 20])
+        sprite.scale = [3, 2]
+        let node = Node()
+        node.scale = [4, 5]
+        scene.addChild(sprite)
+        scene.addChild(node)
+        let action = Action.scale(toSize: [40, 80], duration: .seconds(2))
+        sprite.run(action)
+        node.run(action)
+        scene.advance(by: .seconds(1))
+        #expect(sprite.scale == [3, 3])
+        #expect(node.scale == [4, 5])
+        scene.advance(by: .seconds(1))
+        #expect(sprite.scale == [3, 4])
+        #expect(sprite.size == [0, 20])
+        #expect(!sprite.hasActions && !node.hasActions)
+    }
+
     @Test func relativeResizeComposesAndIgnoresPlainNodes() {
         let scene = Scene(size: [200, 100])
         let sprite = Sprite(color: .white, size: [20, 30])
