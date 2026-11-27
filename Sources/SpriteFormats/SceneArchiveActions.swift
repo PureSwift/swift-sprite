@@ -233,6 +233,28 @@ struct ArchiveActionDecoder {
         case "SKFade":
             let alpha = try number("_alphaTarget")
             action = try flag("_isRelative") ? .fadeAlpha(by: alpha, duration: duration) : .fadeAlpha(to: alpha, duration: duration)
+        case "SKResize":
+            let useWidth = try flag("_useW"), useHeight = try flag("_useH")
+            guard useWidth || useHeight else {
+                throw SceneArchiveError.invalid("Resize action without dimensions")
+            }
+            guard try number("_sizeResidual.width") == 0, try number("_sizeResidual.height") == 0 else {
+                throw SceneArchiveError.unsupported("Partially executed resize action")
+            }
+            for key in [useWidth ? "_sizeTarget.width" : nil, useHeight ? "_sizeTarget.height" : nil].compactMap({ $0 }) {
+                guard try !graph.isNull(fields[key]) else {
+                    throw SceneArchiveError.invalid("Missing resize target")
+                }
+            }
+            let width = try number("_sizeTarget.width"), height = try number("_sizeTarget.height")
+            if try flag("_isRelative") {
+                action = .resize(by: [useWidth ? width : 0, useHeight ? height : 0], duration: duration)
+            } else if useWidth && useHeight {
+                action = .resize(to: [width, height], duration: duration)
+            } else {
+                action = useWidth ? .resizeTo(width: width, duration: duration)
+                    : .resizeTo(height: height, duration: duration)
+            }
         case "SKColorize":
             guard try !graph.isNull(fields["_colorMix"]), try !graph.isNull(fields["_isMixOnly"]) else {
                 throw SceneArchiveError.invalid("Missing color action settings")
