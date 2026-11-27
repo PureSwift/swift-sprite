@@ -582,6 +582,8 @@ import SpriteGraph
         for changes: [String: PropertyValue] in [
             [:], ["_action": .null], ["_subSpriteKey": .string("")],
             ["_subSpriteKey": .string("//target")], ["_subSpriteKey": .string("*")],
+            ["_subSpriteKey": .string("/target")], ["_subSpriteKey": .string("container/")],
+            ["_subSpriteKey": .string("container//target")], ["_subSpriteKey": .string("../target")],
             ["_duration": .number(1)], ["_waitForKeyedAction": .bool(true)],
             ["_actionKey": .string("key")], ["_runOnSubSprite": .bool(false)]
         ] {
@@ -591,6 +593,20 @@ import SpriteGraph
             var decoder = ArchiveActionDecoder(graph: graph)
             #expect(throws: SceneArchiveError.self) { try decoder.actions(node) }
         }
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresRelativeChildPaths(format: String) throws {
+        let scene = try #require(SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/child-path-actions." + format))).makeNode() as? Scene)
+        let target = try #require(scene.children[1].children.first)
+        let other = try #require(scene.children[2].children.first)
+        scene.advance(by: .milliseconds(500))
+        #expect(target.position.x == 5 && target.hasActions)
+        #expect(other.position == .zero && !other.hasActions)
+        #expect(!scene.hasActions)
+        scene.advance(by: .milliseconds(500))
+        #expect(target.position.x == 10 && !target.hasActions)
     }
 
     @Test func rejectsInvalidScaleActions() throws {
