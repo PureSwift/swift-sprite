@@ -581,7 +581,7 @@ import SpriteGraph
         ]
         for changes: [String: PropertyValue] in [
             [:], ["_action": .null], ["_subSpriteKey": .string("")],
-            ["_subSpriteKey": .string("//target")], ["_subSpriteKey": .string("*")],
+            ["_subSpriteKey": .string("///target")], ["_subSpriteKey": .string("*")],
             ["_subSpriteKey": .string("/")], ["_subSpriteKey": .string("container/")],
             ["_subSpriteKey": .string("container//target")], ["_subSpriteKey": .string("../") ],
             ["_duration": .number(1)], ["_waitForKeyedAction": .bool(true)],
@@ -634,6 +634,21 @@ import SpriteGraph
         scene.advance(by: .seconds(1))
         #expect(target.position == [10, 0] && caller.position == [0, 5])
         #expect(!target.hasActions && !caller.hasActions)
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresScopedRecursiveChildPaths(format: String) throws {
+        let scene = try #require(SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/recursive-path-actions." + format))).makeNode() as? Scene)
+        let outside = scene.children[0]
+        let caller = scene.children[1]
+        let nested = try #require(caller.children.first?.children.first)
+        scene.advance(by: .milliseconds(500))
+        #expect(outside.position == .zero && outside.hasActions)
+        #expect(nested.position == [0, 2.5])
+        scene.advance(by: .seconds(1))
+        #expect(outside.position == [10, 0] && nested.position == [0, 5])
+        #expect(!outside.hasActions && !nested.hasActions && !caller.hasActions)
     }
 
     @Test func rejectsInvalidScaleActions() throws {
