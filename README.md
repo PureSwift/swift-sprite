@@ -226,7 +226,8 @@ standard timing modes use the engine's easing curves. Size-based scaling resolve
 sprite's base size when playback starts; zero-sized dimensions retain their scale,
 and nonsprite nodes are unaffected.
 
-Actions start from their archived descriptions. Reversed actions, detectable partially
+Actions start from their archived descriptions. Reversed relative movement, Z rotation,
+and resizing use the reversed deltas stored by SpriteKit. Other reversed actions, detectable partially
 executed state, retimed composites/flipbooks, single-axis relative scaling,
 paths, archived executable callbacks, and custom classes are unsupported. Native fixtures
 do not encode node or action speed; omitted runtime state cannot be recovered. Node speed and
@@ -388,7 +389,7 @@ sound once and preserves archived action waits without loading audio files. With
 `--mute`, sound actions still fail with a missing-sound error.
 
 The script uses SDL's dummy video driver and software renderer, requires clean exits
-and completed frames for successful loads, and treats timeouts as failures. Its 29
+and completed frames for successful loads, and treats timeouts as failures. Its 30
 checks cover custom classes, references, muted sound actions, source/compiled atlases, physics fixtures,
 and invalid options or resources. Temporary derived archives stay outside the repository.
 The `Viewer smoke tests` workflow builds the viewer, runs the full Swift test suite,
