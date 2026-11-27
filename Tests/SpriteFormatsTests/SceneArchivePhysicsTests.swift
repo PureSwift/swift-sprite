@@ -78,6 +78,47 @@ import SpritePhysics
         #expect(other.children[0].position == .zero)
     }
 
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresEdgePhysics(format: String) throws {
+        let archive = try SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/edge-physics." + format)))
+        let scene = try #require(archive.makeNode() as? Scene)
+        let shapes: [PhysicsShape] = [
+            .edge(from: [2, 3], to: [40, 5]),
+            .edgeChain([[10, 20], [40, 20], [40, 60]]),
+            .edgeLoop([[10, 20], [40, 20], [40, 60]]),
+            .edgeLoop([[10, 20], [40, 20], [40, 60], [10, 60]])
+        ]
+        for (node, shape) in zip(scene.children, shapes) {
+            let body = try #require(node.physicsBody)
+            #expect(body.shape == shape)
+            #expect(!body.isDynamic && body.area == 0)
+        }
+        for _ in 0..<60 { scene.advance(by: .seconds(1.0 / 60)) }
+        for (index, node) in scene.children.enumerated() {
+            #expect(node.position == [Float(index * 100), 0])
+            #expect(node.zRotation == 0)
+        }
+        let world = scene.physicsWorld
+        #expect(world.rayCast(from: [20, 10], to: [20, 0])?.body === scene.children[0].physicsBody)
+        // The open chain has no closing diagonal, while the loop does.
+        #expect(world.rayCast(from: [105, 40], to: [135, 40]) == nil)
+        #expect(world.rayCast(from: [205, 40], to: [235, 40])?.body === scene.children[2].physicsBody)
+        #expect(world.rayCast(from: [305, 40], to: [315, 40])?.body === scene.children[3].physicsBody)
+        #expect(world.rayCast(from: [315, 40], to: [305, 40])?.body === scene.children[3].physicsBody)
+    }
+
+    @Test func rejectsMalformedEdges() throws {
+        for changes: [String: Any] in [
+            ["_p1": "{2, 3}"], ["_p1": "{1000001, 0}"], ["_p1": "{nan, 0}"],
+            ["_p1": ["TestUID": 0]], ["_p0": ["TestUID": 0]],
+            ["_shapeType": 5], ["_shapeType": 6]
+        ] {
+            let data = try mutated("PKPhysicsBody", changes: changes, fixture: "edge-physics")
+            #expect(throws: SceneArchiveError.self) { try SpriteKitSceneArchive.decode(data) }
+        }
+    }
+
     @Test func rejectsMalformedCompoundPhysics() throws {
         for changes: [String: Any] in [
             ["_compoundBodyCount": 0], ["_compoundBodyCount": -1],
@@ -146,8 +187,8 @@ import SpritePhysics
         #expect(body.contactTestBitMask.rawValue == UInt32.max)
     }
 
-    @Test func validatesPolygonGeometry() throws {
-        func body(_ points: [Vector2], curve: Bool = false) throws -> ArchivePhysicsBody {
+    @Test func validatesPathGeometry() throws {
+        func body(_ points: [Vector2], curve: Bool = false, shapeType: Double = 3) throws -> ArchivePhysicsBody {
             let graph = try KeyedArchive(ArchivePropertyList.decode(Data(contentsOf: Fixtures.url("SceneArchives/physics.xml"))))
             let bodyClass = try #require(graph.objects.firstIndex { $0.dictionary?["$classname"]?.string == "PKPhysicsBody" })
             let dictionaryClass = try #require(graph.objects.firstIndex { $0.dictionary?["$classname"]?.string == "NSDictionary" })
@@ -157,7 +198,7 @@ import SpritePhysics
                         .array([.string("{\(point.x), \(point.y)}")])])])
             }
             return try ArchivePhysicsBody(.dictionary(["$class": .uid(bodyClass),
-                "_shapeType": .number(3), "_path": .array(elements)]), graph: graph)
+                "_shapeType": .number(shapeType), "_path": .array(elements)]), graph: graph)
         }
         for points: [Vector2] in [[], [[0, 0], [1, 1], [2, 2]],
             [[0, 0], [0, 10], [10, 0]], [[0, 0], [10, 0], [2, 2], [0, 10]]] {
@@ -165,6 +206,22 @@ import SpritePhysics
         }
         #expect(throws: SceneArchiveError.self) { try body([[0, 0], [10, 0], [0, 10]], curve: true) }
         #expect(try body([[0, 0], [10, 0], [0, 10]]).shape == .polygon([[0, 0], [10, 0], [0, 10]]))
+        for type: Double in [5, 6] {
+            for points: [Vector2] in [[], [[0, 0]], [[0, 0], [0, 0], [10, 0]],
+                [[0, 0], [10, 0], [0, 1_000_001]], Array(repeating: [0, 0], count: 1026)] {
+                #expect(throws: SceneArchiveError.self) { try body(points, shapeType: type) }
+            }
+            #expect(throws: SceneArchiveError.self) {
+                try body([[0, 0], [10, 0], [0, 10]], curve: true, shapeType: type)
+            }
+        }
+        let concave: [Vector2] = [[0, 0], [10, 0], [2, 2], [0, 10]]
+        #expect(try body(concave, shapeType: 6).shape == .edgeLoop(concave))
+        #expect(try body([[0, 0], [10, 0]], shapeType: 5).shape == .edgeChain([[0, 0], [10, 0]]))
+        #expect(throws: SceneArchiveError.self) { try body([[0, 0], [10, 0]], shapeType: 6) }
+        let closed: [Vector2] = [[0, 0], [10, 0], [0, 10], [0, 0]]
+        #expect(try body(closed, shapeType: 5).shape == .edgeChain(closed))
+        #expect(try body(closed, shapeType: 6).shape == .edgeLoop(Array(closed.dropLast())))
     }
 
     @Test func rejectsScaledPhysicsHierarchy() throws {
