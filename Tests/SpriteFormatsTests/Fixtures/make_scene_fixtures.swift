@@ -519,3 +519,23 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: resizeArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("resize-actions." + suffix))
 }
+
+let sizeScaleScene = SKScene(size: CGSize(width: 200, height: 100))
+for action in [
+    SKAction.scale(to: CGSize(width: 80, height: 90), duration: 2),
+    SKAction.sequence([
+        SKAction.resize(toWidth: 40, height: 60, duration: 1),
+        SKAction.scale(to: CGSize(width: 80, height: 120), duration: 1)
+    ])
+] {
+    let sprite = SKSpriteNode(color: .blue, size: CGSize(width: 20, height: 30))
+    sprite.xScale = 2
+    sprite.yScale = 1
+    sprite.run(action, withKey: "size-scale")
+    sizeScaleScene.addChild(sprite)
+}
+let sizeScaleArchive = try tilePlist(sizeScaleScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: sizeScaleArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("size-scale-actions." + suffix))
+}
