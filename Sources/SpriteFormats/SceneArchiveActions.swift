@@ -222,6 +222,23 @@ struct ArchiveActionDecoder {
         case "SKFade":
             let alpha = try number("_alphaTarget")
             action = try flag("_isRelative") ? .fadeAlpha(by: alpha, duration: duration) : .fadeAlpha(to: alpha, duration: duration)
+        case "SKColorize":
+            guard try !graph.isNull(fields["_colorMix"]), try !graph.isNull(fields["_isMixOnly"]) else {
+                throw SceneArchiveError.invalid("Missing color action settings")
+            }
+            let blend = try number("_colorMix")
+            guard (0...1).contains(blend) else { throw SceneArchiveError.invalid("Invalid color blend factor") }
+            if try flag("_isMixOnly") {
+                action = .colorize(withBlendFactor: blend, duration: duration)
+            } else {
+                for key in ["_colorBlendR", "_colorBlendG", "_colorBlendB", "_colorBlendA"] {
+                    guard try !graph.isNull(fields[key]), try (0...1).contains(number(key)) else {
+                        throw SceneArchiveError.invalid("Invalid action color component")
+                    }
+                }
+                action = .colorize(with: try graph.color(fields, prefix: "_colorBlend"),
+                    blendFactor: blend, duration: duration)
+            }
         case "SKWait": action = .wait(for: duration)
         case "SKHide", "SKRemove":
             guard seconds == 0 else { throw SceneArchiveError.unsupported("Retimed instantaneous action") }
