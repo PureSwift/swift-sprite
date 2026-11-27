@@ -554,6 +554,45 @@ import SpriteGraph
         }
     }
 
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresChildActionDispatch(format: String) throws {
+        let archive = try SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/child-actions." + format)))
+        #expect(throws: SceneArchiveError.self) { try archive.makeNode() }
+        var requests = 0
+        let scene = try #require(archive.makeNode(textureResolver: { _ in
+            requests += 1
+            return Texture(id: TextureID(rawValue: 12), textureSize: [80, 40])
+        }) as? Scene)
+        let target = try #require(scene.children.first as? Sprite)
+        #expect(requests == 1 && !target.hasActions && target.texture == nil)
+        scene.advance(by: .milliseconds(250))
+        #expect(!target.hasActions && target.position == .zero)
+        scene.advance(by: .milliseconds(250))
+        #expect(!scene.hasActions && scene.position.x == 1 && target.hasActions)
+        #expect(target.texture?.size == [40, 40] && target.size == [40, 40])
+        scene.advance(by: .seconds(1))
+        #expect(target.position.x == 10 && !target.hasActions)
+    }
+
+    @Test func rejectsInvalidChildActionDispatch() throws {
+        let valid: [String: PropertyValue] = [
+            "_runOnSubSprite": .bool(true), "_subSpriteKey": .string("target"), "_action": .uid(2)
+        ]
+        for changes: [String: PropertyValue] in [
+            [:], ["_action": .null], ["_subSpriteKey": .string("")],
+            ["_subSpriteKey": .string("//target")], ["_subSpriteKey": .string("*")],
+            ["_duration": .number(1)], ["_waitForKeyedAction": .bool(true)],
+            ["_actionKey": .string("key")], ["_runOnSubSprite": .bool(false)]
+        ] {
+            // The unchanged case deliberately refers to itself to test cycle rejection.
+            let (graph, node) = try archive(actionFields: valid.merging(changes) { _, new in new },
+                className: "SKRunAction")
+            var decoder = ArchiveActionDecoder(graph: graph)
+            #expect(throws: SceneArchiveError.self) { try decoder.actions(node) }
+        }
+    }
+
     @Test func rejectsInvalidScaleActions() throws {
         for fields: [String: PropertyValue] in [
             ["_useX": .bool(false), "_useY": .bool(false)],
