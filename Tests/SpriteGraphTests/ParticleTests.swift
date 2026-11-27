@@ -153,4 +153,26 @@ import SpriteCore
         step(emitter, seconds: 1)
         #expect(emitter.particleCount == 0)
     }
+
+    @Test func spawnOffsetAndColorBlending() {
+        let scene = Scene(size: [100, 100])
+        let emitter = makeEmitter()
+        emitter.numParticlesToEmit = 1
+        emitter.particlePosition = [3, 4]
+        emitter.position = [10, 20]
+        emitter.targetNode = scene
+        emitter.particleColor = .red
+        emitter.particleColorBlendFactor = 0.5
+        emitter.particleSize = [2, 2]
+        scene.addChild(emitter)
+        scene.advance(by: .seconds(0.1))
+        #expect(emitter.particles.position[0] == [13, 24])
+        let frame = scene.makeFrame(viewportSize: [100, 100])
+        #expect(frame.vertices.count == 4)
+        #expect(frame.vertices.allSatisfy { $0.color == Color(red: 1, green: 0.5, blue: 0.5) })
+        emitter.particleColorBlendFactor = 0
+        #expect(scene.makeFrame(viewportSize: [100, 100]).vertices.allSatisfy { $0.color == .white })
+        emitter.particleColorBlendFactor = 1
+        #expect(scene.makeFrame(viewportSize: [100, 100]).vertices.allSatisfy { $0.color == .red })
+    }
 }

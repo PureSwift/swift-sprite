@@ -352,6 +352,19 @@ if let option = CommandLine.arguments.firstIndex(of: "--tmx") {
     let url = URL(fileURLWithPath: CommandLine.arguments[option + 1])
     let archive = try SpriteKitSceneArchive.decode(Data(contentsOf: url))
     for diagnostic in archive.diagnostics { print(diagnostic) }
+    var tileSets: [String: SpriteKitTileSetArchive] = [:]
+    if let setsOption = CommandLine.arguments.firstIndex(of: "--tilesets") {
+        guard CommandLine.arguments.indices.contains(setsOption + 1) else {
+            throw SceneArchiveError.invalid("Usage: sprite-viewer --sks scene.sks --tilesets TileSets.sks")
+        }
+        let setsURL = URL(fileURLWithPath: CommandLine.arguments[setsOption + 1])
+        for set in try SpriteKitTileSetArchive.decode(Data(contentsOf: setsURL)) {
+            guard let name = set.name, tileSets[name] == nil else {
+                throw SceneArchiveError.invalid("Tile sets must have unique names")
+            }
+            tileSets[name] = set
+        }
+    }
     // Preview uses the built-in bitmap font; applications can supply their own font mapping.
     let font = try BitmapFont.debug(backend: backend)
     let root = try archive.makeNode(textureResolver: { reference in
@@ -362,7 +375,7 @@ if let option = CommandLine.arguments.firstIndex(of: "--tmx") {
         if imageURL.pathExtension.isEmpty { imageURL.appendPathExtension("png") }
         let pixels = try PixelBuffer(png: Array(Data(contentsOf: imageURL)))
         return try backend.makeTexture(pixels, filtering: reference.filtering)
-    }, fontResolver: { _ in font })
+    }, fontResolver: { _ in font }, tileSetResolver: { tileSets[$0] })
     if let archivedScene = root as? Scene {
         scene = archivedScene
     } else {
