@@ -7,6 +7,7 @@ public enum SceneArchiveError: Error, Equatable, Sendable {
     case unsupported(String)
     case missingTexture(String)
     case missingFont(String)
+    case missingTileSet(String)
 }
 
 /// Reads binary or XML SpriteKit keyed archives through Foundation.
@@ -49,6 +50,7 @@ public struct SpriteKitSceneArchive: Sendable {
         var vertical: Label.VerticalAlignment = .baseline
         var lineCount = 1
         var layoutWidth: Float = 0
+        var tileMap: ArchiveTileMap?
         var emitter: ArchiveEmitter?
         var target: Int?
         var actions: [ArchiveNodeAction] = []
@@ -79,7 +81,7 @@ public struct SpriteKitSceneArchive: Sendable {
             }
             let fields = try graph.dictionary(.uid(id))
             let className = try graph.className(fields)
-            guard ["SKScene", "SKNode", "SKSpriteNode", "SKCameraNode", "SKLabelNode", "SKEmitterNode"].contains(className) else {
+            guard ["SKScene", "SKNode", "SKSpriteNode", "SKCameraNode", "SKLabelNode", "SKEmitterNode", "SKTileMapNode"].contains(className) else {
                 throw SceneArchiveError.unsupported("Node class \(className) at object \(id)")
             }
             if className == "SKScene", id != graph.rootID {
@@ -187,6 +189,9 @@ public struct SpriteKitSceneArchive: Sendable {
                 record.layoutWidth = try graph.number(fields["_preferredMaxLayoutWidth"], default: 0)
             default: break
             }
+            if className == "SKTileMapNode" {
+                record.tileMap = try ArchiveTileMap(fields, graph: graph)
+            }
             if className == "SKEmitterNode" {
                 record.emitter = try ArchiveEmitter(fields, graph: graph)
                 if try !graph.isNull(fields["_target"]) {
@@ -194,32 +199,10 @@ public struct SpriteKitSceneArchive: Sendable {
                 }
             }
             let textureValue = className == "SKEmitterNode" ? fields["_particleTexture"] : (className == "SKSpriteNode" ? fields["_texture"] : nil)
-            if try !graph.isNull(textureValue) {
-                let texture = try graph.dictionary(textureValue)
-                guard try graph.className(texture) == "SKTexture" else {
-                    throw SceneArchiveError.unsupported("Texture class")
-                }
-                for key in ["_isData", "_isCapture", "_isRotated", "_isFlipped"] {
-                    guard try !graph.boolean(texture[key], default: false) else {
-                        throw SceneArchiveError.unsupported("Texture \(key)")
-                    }
-                }
-                guard try graph.vector(texture["_cropScale"], default: .one) == .one,
-                      try graph.vector(texture["_cropOffset"], default: .zero) == .zero else {
-                    throw SceneArchiveError.unsupported("Trimmed texture")
-                }
-                guard let imageName = try graph.string(texture["_imgName"]), !imageName.isEmpty else {
-                    throw SceneArchiveError.unsupported("Texture without image name")
-                }
-                let filtering = try graph.number(texture["_filteringMode"], default: 1)
-                guard filtering == 0 || filtering == 1 else { throw SceneArchiveError.invalid("Texture filtering mode") }
-                record.texture = try TextureReference(imageName: imageName,
-                    atlasName: graph.string(texture["_originalAtlasName"]),
-                    subtextureName: graph.string(texture["_subTextureName"]),
-                    filtering: filtering == 0 ? .nearest : .linear)
-                let rect = try graph.rect(texture["_textRect"], default: .unit)
-                try graph.validateUnitRect(rect)
-                record.textureRect = Rect(x: rect.minX, y: 1 - rect.maxY, width: rect.width, height: rect.height)
+            if let value = textureValue, try !graph.isNull(value) {
+                let texture = try ArchiveTexture(value, graph: graph)
+                record.texture = texture.reference
+                record.textureRect = texture.rect
             }
             records.append(record)
             for child in record.children { try visit(child, depth: depth + 1, scaledAncestor: scaled) }
@@ -240,22 +223,26 @@ public struct SpriteKitSceneArchive: Sendable {
     /// Return the named image or atlas entry before the archive's texture-rect crop.
     @MainActor public func makeNode(
         textureResolver: (TextureReference) throws -> Texture? = { _ in nil },
-        fontResolver: (String) throws -> BitmapFont? = { _ in nil }
+        fontResolver: (String) throws -> BitmapFont? = { _ in nil },
+        tileSetResolver: (String) throws -> SpriteKitTileSetArchive? = { _ in nil }
     ) throws -> Node {
         var nodes: [Int: Node] = [:]
         var textures: [TextureReference: Texture] = [:]
         var fonts: [String: BitmapFont] = [:]
+        var tileSets: [String: SpriteKitTileSetArchive] = [:]
+        func resolveTexture(_ reference: TextureReference, rect: Rect) throws -> Texture {
+            if textures[reference] == nil {
+                guard let texture = try textureResolver(reference) else {
+                    throw SceneArchiveError.missingTexture(reference.imageName)
+                }
+                textures[reference] = texture
+            }
+            guard let texture = textures[reference] else { throw SceneArchiveError.missingTexture(reference.imageName) }
+            return texture.subtexture(inUnitRect: rect)
+        }
         for record in records {
             var texture: Texture?
-            if let reference = record.texture {
-                if textures[reference] == nil {
-                    guard let resolved = try textureResolver(reference) else {
-                        throw SceneArchiveError.missingTexture(reference.imageName)
-                    }
-                    textures[reference] = resolved
-                }
-                texture = textures[reference]?.subtexture(inUnitRect: record.textureRect)
-            }
+            if let reference = record.texture { texture = try resolveTexture(reference, rect: record.textureRect) }
             let node: Node
             switch record.className {
             case "SKScene":
@@ -290,6 +277,20 @@ public struct SpriteKitSceneArchive: Sendable {
                 label.numberOfLines = record.lineCount
                 label.preferredMaxLayoutWidth = record.layoutWidth
                 node = label
+            case "SKTileMapNode":
+                guard let map = record.tileMap else { throw SceneArchiveError.invalid("Missing tile map") }
+                let set: SpriteKitTileSetArchive
+                if let embedded = map.tileSet { set = embedded }
+                else {
+                    guard let name = map.tileSetName else { throw SceneArchiveError.invalid("Missing tile set name") }
+                    if tileSets[name] == nil {
+                        guard let resolved = try tileSetResolver(name) else { throw SceneArchiveError.missingTileSet(name) }
+                        tileSets[name] = resolved
+                    }
+                    guard let resolved = tileSets[name] else { throw SceneArchiveError.missingTileSet(name) }
+                    set = resolved
+                }
+                node = try map.makeNode(set: set) { try resolveTexture($0.reference, rect: $0.rect) }
             case "SKEmitterNode":
                 guard let emitter = record.emitter else { throw SceneArchiveError.invalid("Missing emitter settings") }
                 node = emitter.makeEmitter(texture: texture)
