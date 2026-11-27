@@ -184,8 +184,8 @@ struct ArchiveActionDecoder {
             throw SceneArchiveError.unsupported("Already fired action")
         }
         if try flag("_isReversed") {
-            // Native archives store the already-negated deltas in the ordinary target fields.
-            guard ["SKMove", "SKRotate", "SKResize"].contains(name), try flag("_isRelative") else {
+            // Native archives store reversed deltas or reciprocal scale factors in the target fields.
+            guard ["SKMove", "SKRotate", "SKResize", "SKScale"].contains(name), try flag("_isRelative") else {
                 throw SceneArchiveError.unsupported("Reversed action")
             }
         }
@@ -223,6 +223,9 @@ struct ArchiveActionDecoder {
             action = try flag("_isRelative") ? .rotate(by: angle, duration: duration)
                 : .rotate(to: angle, duration: duration, shortestUnitArc: flag("_isUnitArc"))
         case "SKScale":
+            guard try number("_deltaScaleX") == 0, try number("_deltaScaleY") == 0 else {
+                throw SceneArchiveError.unsupported("Partially executed scale action")
+            }
             let useX = try flag("_useX"), useY = try flag("_useY")
             guard useX || useY else { throw SceneArchiveError.invalid("Scale action without axes") }
             let target = try Vector2(number("_scaleTargetX"), number("_scaleTargetY"))
