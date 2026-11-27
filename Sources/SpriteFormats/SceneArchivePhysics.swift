@@ -66,6 +66,8 @@ struct ArchivePhysicsBody: Sendable {
             shape = .rectangle(size: size, center: try graph.vector(fields["_p0"], default: .zero))
         case 3:
             shape = .polygon(try Self.polygon(fields["_path"], graph: graph))
+        case 7:
+            shape = try Self.compound(fields, graph: graph)
         default: throw SceneArchiveError.unsupported("Physics shape type")
         }
         let center = try graph.vector(fields["_p0"], default: .zero)
@@ -120,9 +122,57 @@ struct ArchivePhysicsBody: Sendable {
         return number < 0 ? UInt32(bitPattern: Int32(number)) : UInt32(number)
     }
 
-    private static func polygon(_ value: PropertyValue?, graph: KeyedArchive) throws -> [Vector2] {
+    private static func compound(_ fields: [String: PropertyValue], graph: KeyedArchive) throws -> PhysicsShape {
+        guard case let .number(count) = try graph.resolve(fields["_compoundBodyCount"]),
+              count.rounded() == count, (1...256).contains(count) else {
+            throw SceneArchiveError.invalid("Invalid compound physics shape count")
+        }
+        var cursor = 0
+        var vertexBudget = 4096
+        func next() throws -> PropertyValue {
+            let key = "$\(cursor)"
+            cursor += 1
+            guard let value = fields[key], try !graph.isNull(value) else {
+                throw SceneArchiveError.invalid("Missing compound physics shape field")
+            }
+            return value
+        }
+        var shapes: [PhysicsShape] = []
+        for _ in 0..<Int(count) {
+            switch try graph.string(next()) {
+            case "circle":
+                let radius = try graph.vector(next(), default: .zero)
+                let center = try graph.vector(next(), default: .zero)
+                guard radius.x > 0, radius.x <= 1_000_000, radius.y == 0,
+                      abs(center.x) <= 1_000_000, abs(center.y) <= 1_000_000 else {
+                    throw SceneArchiveError.invalid("Invalid compound physics circle")
+                }
+                shapes.append(.circle(radius: radius.x, center: center))
+            case "polygon":
+                // Compound polygon paths use meters; compound circles retain point units.
+                let points = try polygon(next(), graph: graph, scale: archivePointsPerMeter,
+                    maximumElements: min(1025, vertexBudget + 1))
+                guard points.count <= vertexBudget else {
+                    throw SceneArchiveError.invalid("Compound physics vertex limit")
+                }
+                vertexBudget -= points.count
+                shapes.append(.polygon(points))
+            default:
+                throw SceneArchiveError.unsupported("Compound physics shape kind")
+            }
+        }
+        guard !fields.keys.contains(where: { key in
+            key.first == "$" && Int(key.dropFirst()).map { $0 < 0 || $0 >= cursor } == true
+        }) else {
+            throw SceneArchiveError.invalid("Unexpected compound physics shape field")
+        }
+        return .compound(shapes)
+    }
+
+    private static func polygon(_ value: PropertyValue?, graph: KeyedArchive, scale: Float = 1,
+        maximumElements: Int = 1025) throws -> [Vector2] {
         let elements = try graph.array(value)
-        guard (3...1025).contains(elements.count) else { throw SceneArchiveError.invalid("Invalid physics polygon") }
+        guard elements.count >= 3, elements.count <= maximumElements else { throw SceneArchiveError.invalid("Invalid physics polygon") }
         var points: [Vector2] = []
         for (index, element) in elements.enumerated() {
             let fields = try graph.dictionary(element)
@@ -147,7 +197,7 @@ struct ArchivePhysicsBody: Sendable {
             guard vertices.count == 1, try !graph.isNull(vertices[0]) else {
                 throw SceneArchiveError.invalid("Invalid physics path point")
             }
-            points.append(try graph.vector(vertices[0], default: .zero))
+            points.append(try graph.vector(vertices[0], default: .zero) * scale)
         }
         if points.last == points.first { points.removeLast() }
         guard points.count >= 3, points.allSatisfy({ abs($0.x) <= 1_000_000 && abs($0.y) <= 1_000_000 }) else {
