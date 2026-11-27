@@ -184,6 +184,21 @@ actions. Only animations that have started and are still active restore their te
 Editor archives may save scenes and sprites paused; unpause the desired
 nodes explicitly to start playback.
 
+Standalone editor `Actions.sks` libraries can be loaded independently of a scene:
+
+```swift
+let library = try await SpriteKitActionArchive.decode(at: actionsURL)
+if let pulse = try library.makeAction(named: "Pulse") {
+    node.run(pulse, withKey: "pulse")
+}
+```
+
+`actionNames` returns sorted names. `makeAction(named:textureResolver:)` returns nil
+for an unknown name and resolves flipbook textures when needed, caching repeated
+references within that call. Running the same action on different nodes creates
+independent playback state. Libraries use the same supported action types and limits
+as scene archives; unsupported entries reject the library during decoding.
+
 Particle emitters restore birth rate/count, lifetime, spawn position/range, speed and
 emission angle, acceleration, rotation, scale, opacity, color/blend factor, size, blend
 mode, and particle Z position. Named particle textures use the same cached resolver as
