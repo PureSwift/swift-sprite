@@ -582,7 +582,7 @@ import SpriteGraph
         for changes: [String: PropertyValue] in [
             [:], ["_action": .null], ["_subSpriteKey": .string("")],
             ["_subSpriteKey": .string("//target")], ["_subSpriteKey": .string("*")],
-            ["_subSpriteKey": .string("/target")], ["_subSpriteKey": .string("container/")],
+            ["_subSpriteKey": .string("/")], ["_subSpriteKey": .string("container/")],
             ["_subSpriteKey": .string("container//target")], ["_subSpriteKey": .string("../target")],
             ["_duration": .number(1)], ["_waitForKeyedAction": .bool(true)],
             ["_actionKey": .string("key")], ["_runOnSubSprite": .bool(false)]
@@ -605,6 +605,20 @@ import SpriteGraph
         #expect(target.position.x == 5 && target.hasActions)
         #expect(other.position == .zero && !other.hasActions)
         #expect(!scene.hasActions)
+        scene.advance(by: .milliseconds(500))
+        #expect(target.position.x == 10 && !target.hasActions)
+    }
+
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func restoresRootRelativeChildPaths(format: String) throws {
+        let scene = try #require(SpriteKitSceneArchive.decode(Data(contentsOf:
+            Fixtures.url("SceneArchives/root-path-actions." + format))).makeNode() as? Scene)
+        let caller = scene.children[0]
+        let local = try #require(caller.children.first)
+        let target = scene.children[1]
+        scene.advance(by: .milliseconds(500))
+        #expect(target.position.x == 5 && target.hasActions)
+        #expect(local.position == .zero && !local.hasActions && !caller.hasActions)
         scene.advance(by: .milliseconds(500))
         #expect(target.position.x == 10 && !target.hasActions)
     }
