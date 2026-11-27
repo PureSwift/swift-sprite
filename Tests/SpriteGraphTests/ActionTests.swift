@@ -145,6 +145,30 @@ import SpriteCore
         #expect(detached.position == .zero && !detached.hasActions)
     }
 
+    @Test func recursiveChildPathsContinueThroughMatchingBranches() {
+        let scene = Scene(size: [100, 100])
+        let wrapper = Node(), first = Node(), second = Node(), target = Node()
+        first.name = "branch"
+        second.name = "branch"
+        target.name = "target"
+        scene.addChild(wrapper)
+        wrapper.addChild(first)
+        wrapper.addChild(second)
+        second.addChild(target)
+        scene.run(.run(.move(by: [10, 0], duration: .zero), onChildWithName: ".//branch/target"))
+        scene.advance(by: .milliseconds(1))
+        #expect(target.position.x == 10)
+        scene.run(.run(.move(by: [100, 0], duration: .zero), onChildWithName: ".//missing"))
+        scene.advance(by: .milliseconds(1))
+        #expect(target.position.x == 10 && !scene.hasActions)
+        let later = Node()
+        later.name = "target"
+        second.addChild(later)
+        scene.run(.run(.move(by: [5, 0], duration: .zero), onChildWithName: "//target"))
+        scene.advance(by: .milliseconds(1))
+        #expect(target.position.x == 15 && later.position == .zero)
+    }
+
     @Test func relativeResizeComposesAndIgnoresPlainNodes() {
         let scene = Scene(size: [200, 100])
         let sprite = Sprite(color: .white, size: [20, 30])
