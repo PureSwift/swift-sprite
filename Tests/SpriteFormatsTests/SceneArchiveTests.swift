@@ -35,6 +35,47 @@ import SpriteGraph
         #expect(scene.makeFrame(viewportSize: [200, 100]).vertices.count == 8)
     }
 
+    @MainActor @Test(arguments: ["sks", "xml"])
+    func importsExplicitCustomClasses(format: String) async throws {
+        let url = Fixtures.url("SceneArchives/custom-classes." + format)
+        let data = try Data(contentsOf: url)
+        #expect(throws: SceneArchiveError.self) { try SpriteKitSceneArchive.decode(data) }
+        #expect(throws: SceneArchiveError.self) {
+            try SpriteKitSceneArchive.decode(data, customNodeClasses: ["FixtureGameScene": .scene])
+        }
+        let archive = try await SpriteKitSceneArchive.decode(at: url,
+            customNodeClasses: ["FixtureGameScene": .scene, "FixtureGameSprite": .sprite])
+        let scene = try #require(archive.makeNode() as? Scene)
+        #expect(scene.name == "custom-scene" && scene.size == [320, 240])
+        let sprite = try #require(scene.children.first as? Sprite)
+        #expect(sprite.name == "custom-sprite" && sprite.size == [20, 30])
+        #expect(sprite.position == [40, 50])
+        #expect(archive.diagnostics.count == 2)
+        #expect(archive.diagnostics.contains { $0.contains("FixtureGameScene imported as SKScene") })
+        #expect(archive.diagnostics.contains { $0.contains("FixtureGameSprite imported as SKSpriteNode") })
+    }
+
+    @MainActor @Test func customMappingsRetainValidation() throws {
+        let custom = try minimal(["_position": "{12, 34}"], className: "GameNode")
+        let archive = try SpriteKitSceneArchive.decode(custom, customNodeClasses: ["GameNode": .node])
+        #expect(try archive.makeNode().position == [12, 34])
+        for mapping: [String: SpriteKitSceneArchive.NodeClass] in [["": .node], ["SKNode": .scene]] {
+            #expect(throws: SceneArchiveError.self) {
+                try SpriteKitSceneArchive.decode(custom, customNodeClasses: mapping)
+            }
+        }
+        let constrained = try minimal(["_constraints": ["unsupported"]], className: "GameNode")
+        #expect(throws: SceneArchiveError.self) {
+            try SpriteKitSceneArchive.decode(constrained, customNodeClasses: ["GameNode": .node])
+        }
+        let nestedScene = try minimal(["_children": [["CF$UID": 3]]], extra: [
+            ["$class": ["CF$UID": 4]], ["$classname": "GameScene"]
+        ])
+        #expect(throws: SceneArchiveError.invalid("A scene cannot be a child node")) {
+            try SpriteKitSceneArchive.decode(nestedScene, customNodeClasses: ["GameScene": .scene])
+        }
+    }
+
     private func referenceArchive(_ name: String, scale: Float = 1) throws -> SpriteKitSceneArchive {
         let data = try PropertyListSerialization.data(fromPropertyList: [
             "$archiver": "NSKeyedArchiver", "$version": 100_000,
