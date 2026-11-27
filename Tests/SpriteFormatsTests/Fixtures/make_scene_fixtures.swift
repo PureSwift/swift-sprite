@@ -749,3 +749,16 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: wildcardArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("wildcard-actions." + suffix))
 }
+
+let bracketScene = SKScene(size: CGSize(width: 100, height: 100))
+for name in ["enemy0", "enemy2", "enemy3"] {
+    let node = SKNode()
+    node.name = name
+    bracketScene.addChild(node)
+}
+bracketScene.run(.run(.moveBy(x: 10, y: 0, duration: 1), onChildWithName: "enemy[1-3]"))
+let bracketArchive = try tilePlist(bracketScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: bracketArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("bracket-actions." + suffix))
+}
