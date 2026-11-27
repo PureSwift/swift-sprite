@@ -439,3 +439,25 @@ for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.bi
     try PropertyListSerialization.data(fromPropertyList: pinnedArchive, format: format, options: 0)
         .write(to: directory.appendingPathComponent("pinned-physics." + suffix))
 }
+
+@objc(FixtureGameScene) final class FixtureGameScene: SKScene {
+    override class var supportsSecureCoding: Bool { true }
+    override func encode(with coder: NSCoder) {
+        super.encode(with: coder)
+        coder.encode(42, forKey: "customScore")
+    }
+}
+@objc(FixtureGameSprite) final class FixtureGameSprite: SKSpriteNode {
+    override class var supportsSecureCoding: Bool { true }
+}
+let customScene = FixtureGameScene(size: CGSize(width: 320, height: 240))
+customScene.name = "custom-scene"
+let customSprite = FixtureGameSprite(color: .red, size: CGSize(width: 20, height: 30))
+customSprite.name = "custom-sprite"
+customSprite.position = CGPoint(x: 40, y: 50)
+customScene.addChild(customSprite)
+let customArchive = try tilePlist(customScene)
+for (suffix, format) in [("sks", PropertyListSerialization.PropertyListFormat.binary), ("xml", .xml)] {
+    try PropertyListSerialization.data(fromPropertyList: customArchive, format: format, options: 0)
+        .write(to: directory.appendingPathComponent("custom-classes." + suffix))
+}
