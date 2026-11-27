@@ -184,8 +184,8 @@ struct ArchiveActionDecoder {
             throw SceneArchiveError.unsupported("Already fired action")
         }
         if try flag("_isReversed") {
-            // Native archives store reversed deltas or reciprocal scale factors in the target fields.
-            guard ["SKMove", "SKRotate", "SKResize", "SKScale"].contains(name), try flag("_isRelative") else {
+            // Native archives store reversed deltas or reciprocal scale/speed factors in the target fields.
+            guard ["SKMove", "SKRotate", "SKResize", "SKScale", "SKSpeed"].contains(name), try flag("_isRelative") else {
                 throw SceneArchiveError.unsupported("Reversed action")
             }
         }
