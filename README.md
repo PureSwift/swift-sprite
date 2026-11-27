@@ -202,8 +202,15 @@ let root = try archive.makeNode(
 )
 ```
 
-Tile definitions must have one static texture, no orientation flags or normal maps,
-and the same size as their map cells. Non-grid layouts are unsupported. The importer
+Tile definitions support static textures and looping texture arrays with a uniform
+frame duration. Each map starts animations at frame zero; cells sharing a definition
+stay synchronized, including newly placed cells. Playback follows scene and ancestor
+pause/speed settings, and maps sharing a tile set maintain independent clocks. Native
+maps can use `TileSet(textures:animations:)` with `TileAnimation` values as well.
+Animated frames preserve texture subrects without rebuilding cached tile geometry.
+
+Tile definitions must have no orientation flags or normal maps and the same size as
+their map cells. Non-grid layouts are unsupported. The importer
 uses the archived definition selection; it does not implement SpriteKit automatic
 adjacency updates, weighted selection, or editor stamps. Tile-set metadata and custom
 properties are not imported. The viewer accepts an explicit companion archive:
