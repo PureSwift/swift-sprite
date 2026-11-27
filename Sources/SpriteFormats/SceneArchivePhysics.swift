@@ -36,6 +36,7 @@ struct ArchivePhysicsBody: Sendable {
     let dynamic: Bool
     let affectedByGravity: Bool
     let allowsRotation: Bool
+    let usesContinuousCollisionDetection: Bool
     let category: UInt32
     let collision: UInt32
     let contact: UInt32
@@ -45,10 +46,8 @@ struct ArchivePhysicsBody: Sendable {
         guard try graph.className(fields) == "PKPhysicsBody" else {
             throw SceneArchiveError.unsupported("Physics body class")
         }
-        for key in ["pinned", "needsContinuousCollsionDetection"] {
-            guard try !graph.boolean(fields[key], default: false) else {
-                throw SceneArchiveError.unsupported("Physics body \(key)")
-            }
+        guard try !graph.boolean(fields["pinned"], default: false) else {
+            throw SceneArchiveError.unsupported("Physics body pinned")
         }
         guard try graph.number(fields["charge"], default: 0) == 0 else {
             throw SceneArchiveError.unsupported("Charged physics body")
@@ -102,6 +101,8 @@ struct ArchivePhysicsBody: Sendable {
         dynamic = try graph.boolean(fields["dynamic"], default: true)
         affectedByGravity = try graph.boolean(fields["affectedByGravity"], default: true)
         allowsRotation = try graph.boolean(fields["allowRotation"], default: true)
+        // The misspelling is part of SpriteKit's native archive key.
+        usesContinuousCollisionDetection = try graph.boolean(fields["needsContinuousCollsionDetection"], default: false)
         category = try Self.mask(fields["categoryBitMask"], default: .max, graph: graph)
         collision = try Self.mask(fields["collisionBitMask"], default: .max, graph: graph)
         contact = try Self.mask(fields["intersectionTestBitMask"], default: 0, graph: graph)
@@ -120,6 +121,7 @@ struct ArchivePhysicsBody: Sendable {
         body.isDynamic = dynamic && body.area > 0
         body.affectedByGravity = affectedByGravity
         body.allowsRotation = allowsRotation
+        body.usesContinuousCollisionDetection = usesContinuousCollisionDetection
         body.categoryBitMask = PhysicsCategory(rawValue: category)
         body.collisionBitMask = PhysicsCategory(rawValue: collision)
         body.contactTestBitMask = PhysicsCategory(rawValue: contact)
